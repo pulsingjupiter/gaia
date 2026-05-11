@@ -109,6 +109,15 @@ if ! CLAUDE_VERSION="$("$CLAUDE_BIN" --version 2>/dev/null)"; then
 fi
 ok "Claude Code CLI: $CLAUDE_VERSION (${DIM}$CLAUDE_BIN${RESET})"
 
+# macmon — optional, powers the Overview thermal widget. Non-blocking.
+if ! command -v macmon >/dev/null 2>&1; then
+  info "Optional: install macmon for thermal monitoring → brew install macmon && macmon serve --install"
+elif ! curl -s --max-time 1 http://127.0.0.1:9090/json >/dev/null 2>&1; then
+  info "macmon installed but not serving — run: macmon serve --install"
+else
+  ok "macmon serving on http://127.0.0.1:9090"
+fi
+
 # --- 3. install app deps -----------------------------------------------------
 
 section "2/6  Installing app dependencies"

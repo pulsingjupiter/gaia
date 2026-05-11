@@ -153,6 +153,7 @@ export default function AgentDetailPage({
                 addSkill={detail.addSkill}
                 saveSkill={detail.saveSkill}
                 deleteSkill={detail.deleteSkill}
+                refresh={detail.refresh}
               />
             ) : tab === "runs" ? (
               <RunsTab runs={detail.recentRuns} />

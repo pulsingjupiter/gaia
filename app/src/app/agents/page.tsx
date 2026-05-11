@@ -7,10 +7,11 @@
  * flows match every other surface that touches an agent.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 
 import { PageHeader } from "@/components/shell/page-header";
 import { EmployeeModal } from "@/components/employees/employee-modal";
+import { AddTeamModal } from "@/components/employees/add-team-modal";
 import { useEmployees } from "@/components/employees/employees-context";
 import type { Employee } from "@/lib/types";
 import { AgentCard } from "@/components/agents/agent-card";
@@ -30,11 +31,12 @@ type RunLite = {
 const RUNS_FETCH_LIMIT = 500;
 
 export default function AgentsPage() {
-  const { employees, remove } = useEmployees();
+  const { employees, remove, refresh } = useEmployees();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("newest");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
   const [statsByAgent, setStatsByAgent] = useState<Record<string, AgentStats>>({});
 
   // Visible workforce: hide the system pseudo-agent and any archived rows.
@@ -120,14 +122,24 @@ export default function AgentsPage() {
         title="Agents"
         subtitle="Your AI workforce. Name them, give them avatars, define their personas."
         right={
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
-          >
-            <Plus size={14} />
-            Add Agent
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTeamModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-2 text-xs font-semibold text-secondary hover:bg-surface-muted"
+            >
+              <Users size={14} />
+              Add Team
+            </button>
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+            >
+              <Plus size={14} />
+              Add Agent
+            </button>
+          </div>
         }
       />
 
@@ -190,6 +202,14 @@ export default function AgentsPage() {
         open={modalOpen}
         onOpenChange={setModalOpen}
         employee={editing}
+      />
+      <AddTeamModal
+        open={teamModalOpen}
+        onOpenChange={setTeamModalOpen}
+        onApplied={() => {
+          // Refresh the list so newly scaffolded agents appear immediately.
+          refresh();
+        }}
       />
     </div>
   );

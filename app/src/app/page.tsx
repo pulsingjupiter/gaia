@@ -18,6 +18,7 @@ import { ActivityFeed } from "@/components/overview/activity-feed";
 import { RecentSessions } from "@/components/overview/recent-sessions";
 import { ConversationsList } from "@/components/overview/conversations-list";
 import { QuickActions } from "@/components/overview/quick-actions";
+import { ThermalWidget } from "@/components/overview/thermal-widget";
 import { LiveRunDrawer } from "@/components/shared/live-run-drawer";
 import { EmployeeModal } from "@/components/employees/employee-modal";
 import { useEmployees } from "@/components/employees/employees-context";
@@ -221,6 +222,7 @@ export default function OverviewPage() {
           <ScheduleStrip />
         </div>
         <div className="flex flex-col gap-4 lg:col-span-4">
+          <ThermalWidget />
           <ActivityFeed />
           <RecentSessions />
           <ConversationsList />

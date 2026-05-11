@@ -14,6 +14,9 @@
 - [ ] Analyse the feature gap between AgentOS and Agent Dashboard — identify exactly what needs to be built to unify them into one tool
 
 ## Completed
+- [x] Agent templates (Feature A) — 10 presets + Blank in the "+ Add Agent" picker (`app/src/lib/agent-templates.ts`, `app/src/lib/slugify.ts`, `app/src/server/agent-scaffold.ts` shared helper; modal step-1 picker; POST `/api/employees` accepts `template_id` and scaffolds CLAUDE.md + default SKILL.md + inbox.json from the preset)
+- [x] Team bundles (Feature B) — "Add Team" button on /agents, 5 preset teams (`app/src/lib/agent-teams.ts`, `app/src/components/employees/add-team-modal.tsx`, POST `app/src/app/api/teams/apply/route.ts`)
+- [x] In-app skill editor (Feature C) — structured-fields modal (`app/src/components/employees/add-skill-modal.tsx`); extended POST `/api/employees/[id]/skills` to accept `{ name, slug, when_to_use, inputs, output, defaults? }` (composed via `composeSkillMd`) alongside legacy `{ name, body }`
 - [x] Agents card — inline `[▶ New] [↻ Continue] [⌄]` launch trio (new `inline` variant in `agent-launch-button.tsx`); fixes "no conversation found" UX trap on fresh deploys
 - [x] Setup banner — per-check "Open Terminal" button (`/api/system/open-terminal`) that opens Terminal.app with the remediation command (`./setup.sh`, `chmod`, npm install) for non-CLI users
 - [x] Projects page — "Scan" button + scan modal (`/api/projects/scan`) to auto-register `.git` repos under a base dir (default `~/Developer`)

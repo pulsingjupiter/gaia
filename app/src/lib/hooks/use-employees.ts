@@ -93,7 +93,10 @@ export type UseEmployees = {
   error: string | null;
   hydrated: boolean;
   refresh: () => Promise<void>;
-  add: (e: Omit<Employee, "id" | "slug" | "initials">) => Promise<Employee | null>;
+  add: (
+    e: Omit<Employee, "id" | "slug" | "initials">,
+    opts?: { template_id?: string | null },
+  ) => Promise<Employee | null>;
   update: (id: string, patch: Partial<Employee>) => Promise<Employee | null>;
   remove: (id: string) => Promise<boolean>;
 };
@@ -150,7 +153,7 @@ export function useEmployees(): UseEmployees {
     void refresh();
   }, [refresh]);
 
-  const add: UseEmployees["add"] = useCallback(async (input) => {
+  const add: UseEmployees["add"] = useCallback(async (input, opts) => {
     try {
       const body: Record<string, unknown> = {
         name: input.name,
@@ -159,6 +162,7 @@ export function useEmployees(): UseEmployees {
         accent_color: input.accent,
       };
       if (input.avatar !== undefined) body.avatar_emoji = input.avatar;
+      if (opts?.template_id) body.template_id = opts.template_id;
       const res = await fetch("/api/employees", {
         method: "POST",
         headers: { "content-type": "application/json" },

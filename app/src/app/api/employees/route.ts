@@ -3,9 +3,15 @@
  * POST /api/employees       → create employee + scaffold agent dir
  *
  * Wave 2A. Touches DB + filesystem (Node-only).
+ *
+ * POST accepts an optional `template_id` — when provided and known, the
+ * agent dir is scaffolded with the template's CLAUDE.md and default
+ * SKILL.md (see `lib/agent-templates.ts`). When omitted, a blank stub is
+ * written (matches the legacy behaviour). The actual filesystem work is
+ * delegated to `server/agent-scaffold.ts` so the same helper is shared
+ * with `/api/teams/apply`.
  */
 import path from "node:path";
-import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -17,18 +23,12 @@ import {
   type EmployeeRow,
 } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
+import { slugify } from "@/lib/slugify";
+import { getTemplateById } from "@/lib/agent-templates";
+import { ScaffoldError, scaffoldAgentFiles } from "@/server/agent-scaffold";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-}
 
 function badRequest(msg: string): Response {
   return Response.json({ error: msg }, { status: 400 });
@@ -55,6 +55,13 @@ type CreateBody = {
   status?: string;
   accent_color?: string | null;
   avatar_emoji?: string | null;
+  /**
+   * Optional preset id from `lib/agent-templates.ts`. When provided, the
+   * agent dir is scaffolded with the template's CLAUDE.md + default
+   * SKILL.md. Unknown ids are rejected with a 400 so misconfigured
+   * clients fail loudly.
+   */
+  template_id?: string | null;
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -79,8 +86,22 @@ export async function POST(request: Request): Promise<Response> {
       ? slugify(body.id)
       : slugify(body.name) || randomUUID().slice(0, 8);
 
+  if (!id) {
+    return badRequest("name must contain at least one alphanumeric character");
+  }
+
   if (getEmployee(id)) {
     return Response.json({ error: `employee '${id}' already exists` }, { status: 409 });
+  }
+
+  // Validate template_id up front so a typo fails before we touch the FS.
+  let templateId: string | null = null;
+  if (typeof body.template_id === "string" && body.template_id.trim()) {
+    const tpl = getTemplateById(body.template_id.trim());
+    if (!tpl) {
+      return badRequest(`unknown template_id '${body.template_id}'`);
+    }
+    templateId = tpl.id;
   }
 
   const status =
@@ -89,40 +110,44 @@ export async function POST(request: Request): Promise<Response> {
     typeof body.accent_color === "string" ? body.accent_color : null;
   const avatar_emoji =
     typeof body.avatar_emoji === "string" ? body.avatar_emoji : null;
-  const agent_dir = path.join(PATHS.agentsDir, id);
   const now = Date.now();
 
-  // Scaffold filesystem first (idempotent — mkdirSync recursive is fine).
+  // Scaffold filesystem first. Refuses to overwrite an existing dir, which
+  // is the contract the spec wants — if a leftover dir is on disk we surface
+  // a 409 instead of silently merging.
+  let agent_dir: string;
   try {
-    fs.mkdirSync(agent_dir, { recursive: true });
-    fs.mkdirSync(path.join(agent_dir, ".claude", "skills"), { recursive: true });
-    const claudeMd = path.join(agent_dir, "CLAUDE.md");
-    if (!fs.existsSync(claudeMd)) {
-      fs.writeFileSync(
-        claudeMd,
-        [
-          `# ${body.name} — ${body.role}`,
-          ``,
-          `You are ${body.name}. Read this file for your persona and role.`,
-          ``,
-          `## What you do`,
-          `(Describe your responsibilities here.)`,
-          ``,
-          `## Inbox / inter-agent`,
-          `Read \`inbox.json\` at the start of each run. You may write up to 3`,
-          `outbound messages by appending to \`inbox.json\`.`,
-          ``,
-        ].join("\n"),
-      );
-    }
-    const inbox = path.join(agent_dir, "inbox.json");
-    if (!fs.existsSync(inbox)) {
-      fs.writeFileSync(inbox, "[]\n");
-    }
+    const result = scaffoldAgentFiles({
+      slug: id,
+      name: body.name.trim(),
+      role: body.role.trim(),
+      template_id: templateId,
+    });
+    agent_dir = result.agent_dir;
   } catch (err) {
+    if (err instanceof ScaffoldError) {
+      if (err.code === "agent_dir_exists") {
+        return Response.json({ error: err.message }, { status: 409 });
+      }
+      if (err.code === "invalid_slug" || err.code === "path_traversal") {
+        return badRequest(err.message);
+      }
+      return Response.json({ error: err.message }, { status: 500 });
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return Response.json(
       { error: `failed to scaffold agent dir: ${msg}` },
+      { status: 500 },
+    );
+  }
+
+  // Belt-and-braces: in pathological cases the helper could return a path
+  // outside PATHS.agentsDir if the resolver were ever loosened — sanity
+  // check before persisting.
+  const expected = path.join(PATHS.agentsDir, id);
+  if (path.resolve(agent_dir) !== path.resolve(expected)) {
+    return Response.json(
+      { error: `scaffold returned unexpected path: ${agent_dir}` },
       { status: 500 },
     );
   }
@@ -144,5 +169,5 @@ export async function POST(request: Request): Promise<Response> {
     );
 
   const employee = getEmployee(id) as EmployeeRow;
-  return Response.json({ employee }, { status: 201 });
+  return Response.json({ employee, applied_template_id: templateId }, { status: 201 });
 }

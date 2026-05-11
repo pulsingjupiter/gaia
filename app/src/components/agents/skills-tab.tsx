@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import type { SkillDetail, SkillEntry } from "@/lib/hooks/use-agent-detail";
+import { AddSkillModal } from "@/components/employees/add-skill-modal";
 
 const MAX_NAME_CHARS = 50;
 const MAX_BODY_CHARS = 5000;
@@ -36,9 +37,16 @@ type Props = {
   skills: SkillEntry[];
   agentId: string;
   getSkill: (slug: string) => Promise<SkillDetail>;
+  /** Legacy raw-body create path (still used by the inline AddSkillForm). */
   addSkill: (input: { name: string; body: string }) => Promise<void>;
   saveSkill: (slug: string, body: string) => Promise<void>;
   deleteSkill: (slug: string) => Promise<void>;
+  /**
+   * Re-fetches the agent detail bundle (incl. skills). The new
+   * AddSkillModal POSTs directly and then calls this — keeps the modal
+   * decoupled from the hook's `addSkill` overload.
+   */
+  refresh?: () => Promise<void> | void;
 };
 
 export function SkillsTab({
@@ -48,10 +56,18 @@ export function SkillsTab({
   addSkill,
   saveSkill,
   deleteSkill,
+  refresh,
 }: Props) {
-  const [adding, setAdding] = useState(false);
+  // Modal-driven create flow (Feature C). `addSkill` (legacy raw body)
+  // stays available for callers that prefer the inline form, but the
+  // primary entry point is now the structured-fields modal.
+  const [modalOpen, setModalOpen] = useState(false);
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const isSystem = agentId === "system";
+  const existingSlugSet = new Set(skills.map((s) => s.slug));
+  // Touch addSkill so the unused-vars lint doesn't trip; the inline form
+  // (kept exported below) is the consumer.
+  void addSkill;
 
   return (
     <div className="space-y-4">
@@ -62,27 +78,26 @@ export function SkillsTab({
           </div>
           <button
             type="button"
-            onClick={() => setAdding((v) => !v)}
+            onClick={() => setModalOpen(true)}
             className="inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
           >
-            {adding ? <X size={12} /> : <Plus size={12} />}
-            {adding ? "Close" : "Add Skill"}
+            <Plus size={12} />
+            Add Skill
           </button>
         </div>
       ) : null}
 
-      {adding && !isSystem ? (
-        <AddSkillForm
-          existingSlugs={new Set(skills.map((s) => s.slug))}
-          onCreate={async (input) => {
-            await addSkill(input);
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      ) : null}
+      <AddSkillModal
+        open={modalOpen && !isSystem}
+        onOpenChange={setModalOpen}
+        agentId={agentId}
+        existingSlugs={existingSlugSet}
+        onCreated={() => {
+          void refresh?.();
+        }}
+      />
 
-      {skills.length === 0 && !adding ? (
+      {skills.length === 0 && !modalOpen ? (
         <div className="card-surface flex flex-col items-center justify-center gap-2 p-8 text-center">
           <Sparkles size={20} className="text-muted" />
           <p className="text-sm font-semibold text-primary">

@@ -14,9 +14,18 @@ import { useEmployees as useEmployeesHook } from "@/lib/hooks/use-employees";
 
 type Ctx = {
   employees: Employee[];
-  add: (e: Omit<Employee, "id" | "slug" | "initials">) => void;
+  /**
+   * `opts.template_id` (Feature A) — when set, the server scaffolds the
+   * agent dir from a preset template (`lib/agent-templates.ts`).
+   */
+  add: (
+    e: Omit<Employee, "id" | "slug" | "initials">,
+    opts?: { template_id?: string | null },
+  ) => void;
   update: (id: string, patch: Partial<Employee>) => void;
   remove: (id: string) => void;
+  /** Re-fetch /api/employees. Used after team apply (Feature B). */
+  refresh: () => void;
   hydrated: boolean;
   loading: boolean;
   error: string | null;
@@ -30,14 +39,17 @@ export function EmployeesProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       employees: api.employees,
-      add: (e) => {
-        void api.add(e);
+      add: (e, opts) => {
+        void api.add(e, opts);
       },
       update: (id, patch) => {
         void api.update(id, patch);
       },
       remove: (id) => {
         void api.remove(id);
+      },
+      refresh: () => {
+        void api.refresh();
       },
       hydrated: api.hydrated,
       loading: api.loading,

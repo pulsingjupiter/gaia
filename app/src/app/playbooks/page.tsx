@@ -4,14 +4,16 @@ import Link from "next/link";
 import { ChevronDown, MoreHorizontal, Search, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/shell/page-header";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
+import { AddPlaybookModal } from "@/components/playbooks/add-playbook-modal";
 import { usePlaybooks, type PlaybookEntry } from "@/lib/hooks/use-playbooks";
 
 const PAGE_CAP = 50;
 
 export default function PlaybooksPage() {
-  const { playbooks, loading } = usePlaybooks();
+  const { playbooks, loading, refresh } = usePlaybooks();
   const [query, setQuery] = useState("");
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [addOpen, setAddOpen] = useState(false);
 
   const agentOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -45,13 +47,22 @@ export default function PlaybooksPage() {
         title="Playbooks"
         subtitle="Reusable workflows your agents can run."
         right={
-          <Link
-            href="/agents"
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
           >
-            Add Skill on an agent →
-          </Link>
+            + Add Playbook
+          </button>
         }
+      />
+
+      <AddPlaybookModal
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onCreated={() => {
+          void refresh();
+        }}
       />
 
       {!loading && playbooks.length === 0 ? (
