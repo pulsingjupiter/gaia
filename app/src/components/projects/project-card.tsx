@@ -12,7 +12,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Archive, MoreHorizontal } from "lucide-react";
+import { Archive, AlertCircle, MoreHorizontal } from "lucide-react";
 import { IconGlyph } from "./icon-glyph";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { cn } from "@/lib/cn";
@@ -60,6 +60,34 @@ export function ProjectCard({ project, liveSummary, pulseKey, onArchive }: Props
   const [menuOpen, setMenuOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Lazy per-card overdue lookup — one /api/tasks/summary?project_id call
+  // every 60s. Cheap aggregate, scales to the visible grid only.
+  const [overdueCount, setOverdueCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOverdue = async () => {
+      try {
+        const res = await fetch(
+          `/api/tasks/summary?project_id=${encodeURIComponent(project.id)}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          summary?: { overdue?: number };
+        };
+        if (cancelled) return;
+        setOverdueCount(data.summary?.overdue ?? 0);
+      } catch {
+        // ignore
+      }
+    };
+    void fetchOverdue();
+    const id = setInterval(fetchOverdue, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [project.id]);
 
   useEffect(() => {
     if (pulseKey === undefined) return;
@@ -221,6 +249,15 @@ export function ProjectCard({ project, liveSummary, pulseKey, onArchive }: Props
           {project.is_internal ? (
             <span className="inline-flex rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent">
               Internal
+            </span>
+          ) : null}
+          {overdueCount && overdueCount > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-status-error"
+              title={`${overdueCount} overdue task${overdueCount === 1 ? "" : "s"}`}
+            >
+              <AlertCircle size={9} />
+              {overdueCount} overdue
             </span>
           ) : null}
           {/* Agent persona avatar — bottom-right of card. Falls back to

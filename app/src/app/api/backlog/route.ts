@@ -72,7 +72,21 @@ type CreateBody = {
   human_label?: unknown;
   status?: unknown;
   project_id?: unknown;
+  milestone_id?: unknown;
+  due_date?: unknown;
 };
+
+function parseDateInput(v: unknown): number | null | "__bad__" {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (trimmed === "") return null;
+    const d = new Date(trimmed);
+    if (Number.isFinite(d.getTime())) return d.getTime();
+  }
+  return "__bad__";
+}
 
 function strOrNull(v: unknown, field: string): string | null | "__bad__" {
   if (v === undefined || v === null) return null;
@@ -117,6 +131,13 @@ export async function POST(request: Request): Promise<Response> {
     priority = p;
   }
 
+  const milestone_id =
+    typeof body.milestone_id === "string" && body.milestone_id.trim() !== ""
+      ? body.milestone_id.trim()
+      : null;
+  const due_date = parseDateInput(body.due_date);
+  if (due_date === "__bad__") return badRequest("due_date must be number|string|null");
+
   const input: InsertTaskInput = {
     title: body.title.trim(),
     description: parsed.description,
@@ -128,6 +149,8 @@ export async function POST(request: Request): Promise<Response> {
     project_id: parsed.project_id,
     priority,
     status: "backlog",
+    milestone_id,
+    due_date,
   };
 
   const task = insertTask(input);

@@ -43,7 +43,21 @@ type PatchBody = {
   priority?: unknown;
   status?: unknown;
   playbook?: unknown;
+  milestone_id?: unknown;
+  due_date?: unknown;
 };
+
+function parseDateInput(v: unknown): number | null | "__bad__" {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (trimmed === "") return null;
+    const d = new Date(trimmed);
+    if (Number.isFinite(d.getTime())) return d.getTime();
+  }
+  return "__bad__";
+}
 
 export async function PATCH(
   request: Request,
@@ -118,6 +132,19 @@ export async function PATCH(
       return badRequest("enabled must be boolean|number");
     }
     patch.enabled = Boolean(body.enabled);
+  }
+
+  if ("milestone_id" in body) {
+    const v = body.milestone_id;
+    if (v !== null && typeof v !== "string") {
+      return badRequest("milestone_id must be string|null");
+    }
+    patch.milestone_id = typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+  }
+  if ("due_date" in body) {
+    const parsed = parseDateInput(body.due_date);
+    if (parsed === "__bad__") return badRequest("due_date must be number|string|null");
+    patch.due_date = parsed;
   }
 
   const task = updateTask(id, patch);

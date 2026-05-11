@@ -8,6 +8,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { randomUUID } from "node:crypto";
 
 import { DEFAULT_EMPLOYEES } from "../lib/mock/employees.ts";
@@ -188,10 +189,20 @@ export type TaskRow = {
   title: string;
   employee_id: string | null;
   skill: string | null;
+  /**
+   * @deprecated Cron rows live in `scheduled_runs` after the cron-split
+   * migration. The column survives on `tasks` for storage compatibility
+   * (SQLite cannot easily drop columns) but is no longer read or written by
+   * `tasks` code paths. Always `null` for work tasks.
+   */
   schedule_cron: string | null;
+  /** @deprecated cron-only. See `schedule_cron`. */
   human_label: string | null;
+  /** @deprecated cron-only. See `schedule_cron`. */
   enabled: 0 | 1;
+  /** @deprecated cron-only. See `schedule_cron`. */
   last_run_id: string | null;
+  /** @deprecated cron-only. See `schedule_cron`. */
   last_run_at: number | null;
   priority: TaskPriority;
   status: TaskStatus;
@@ -199,6 +210,43 @@ export type TaskRow = {
   created_at: number | null;
   playbook: string | null;
   project_id: string | null;
+  /** Optional milestone grouping. References `milestones.id`. */
+  milestone_id: string | null;
+  /** Per-task deadline as ms-epoch. Null = no deadline. */
+  due_date: number | null;
+};
+
+export type MilestoneStatus = "active" | "complete" | "archived";
+
+export type MilestoneRow = {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  due_date: number | null;
+  status: MilestoneStatus;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+};
+
+/**
+ * A cron-fired autonomous task. Distinct from `TaskRow` — these rows live in
+ * the `scheduled_runs` table and feed the in-process cron scheduler (see
+ * `server/cron.ts`) and the /schedule page. Work-task / kanban code paths
+ * MUST NOT touch this type.
+ */
+export type ScheduledRunRow = {
+  id: string;
+  employee_id: string;
+  skill: string | null;
+  playbook: string | null;
+  schedule_cron: string;
+  human_label: string | null;
+  enabled: 0 | 1;
+  last_run_id: string | null;
+  last_run_at: number | null;
+  created_at: number;
 };
 
 export type SettingRow = {
@@ -593,6 +641,299 @@ function initSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at DESC);
   `);
+
+  // -------------------------------------------------------------------------
+  // Cron-split migration — pull autonomy rows out of `tasks` into their own
+  // `scheduled_runs` table so the `tasks` schema can be purely about work
+  // items (backlog → todo → in_progress → review → done). The two concepts
+  // were conflated under one table prior to this split.
+  //
+  // Idempotent: the CREATE/INSERT/DELETE block runs on every boot. After the
+  // first successful run there are no `tasks.schedule_cron != ''` rows to
+  // migrate, so subsequent boots are no-ops. The unused cron columns on
+  // `tasks` remain in place (SQLite cannot easily drop columns and they are
+  // cheap to leave) but no `tasks` code path reads or writes them.
+  //
+  // Backup: in non-test mode we write a one-time .bak file next to the DB if
+  // there are migratable rows, so a manual recovery path exists even if the
+  // process is killed mid-migration. We skip when a backup file already
+  // exists for this DB to avoid filling the data dir on every dev restart.
+  // -------------------------------------------------------------------------
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_runs (
+      id              TEXT PRIMARY KEY,
+      employee_id     TEXT NOT NULL,
+      skill           TEXT,
+      playbook        TEXT,
+      schedule_cron   TEXT NOT NULL,
+      human_label     TEXT,
+      enabled         INTEGER NOT NULL DEFAULT 1,
+      last_run_id     TEXT,
+      last_run_at     INTEGER,
+      created_at      INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_runs_employee ON scheduled_runs(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_runs_enabled ON scheduled_runs(enabled);
+  `);
+
+  try {
+    const tasksHasCronColumn = (
+      db
+        .prepare<unknown[], { name: string }>(`PRAGMA table_info(tasks)`)
+        .all() as { name: string }[]
+    ).some((r) => r.name === "schedule_cron");
+
+    if (tasksHasCronColumn) {
+      const migratable = db
+        .prepare<unknown[], { n: number }>(
+          `SELECT COUNT(*) AS n FROM tasks WHERE schedule_cron IS NOT NULL AND schedule_cron != ''`,
+        )
+        .get() as { n: number };
+
+      if (migratable.n > 0) {
+        // Best-effort one-time backup before mutating data. NODE_ENV !== 'test'
+        // and a unique-per-process filename so repeated boots in the same
+        // minute don't spam the data dir.
+        if (process.env.NODE_ENV !== "test") {
+          try {
+            const existingBackups = fs
+              .readdirSync(DATA_DIR)
+              .filter((f) => f.startsWith("gaia.db.bak-pre-cron-split-"));
+            if (existingBackups.length === 0) {
+              const ts = new Date()
+                .toISOString()
+                .replace(/[:.]/g, "-");
+              const backupPath = path.join(
+                DATA_DIR,
+                `gaia.db.bak-pre-cron-split-${ts}`,
+              );
+              fs.copyFileSync(DB_PATH, backupPath);
+              console.log(`[migrate] wrote backup ${backupPath}`);
+            }
+          } catch (err) {
+            console.warn("[migrate] backup failed (continuing):", err);
+          }
+        }
+
+        const tx = db.transaction(() => {
+          db.exec(`
+            INSERT OR IGNORE INTO scheduled_runs (
+              id, employee_id, skill, playbook, schedule_cron,
+              human_label, enabled, last_run_id, last_run_at, created_at
+            )
+            SELECT
+              id,
+              COALESCE(employee_id, 'system'),
+              skill,
+              playbook,
+              schedule_cron,
+              human_label,
+              enabled,
+              last_run_id,
+              last_run_at,
+              COALESCE(created_at, CAST(strftime('%s','now') AS INTEGER) * 1000)
+            FROM tasks
+            WHERE schedule_cron IS NOT NULL AND schedule_cron != '';
+
+            DELETE FROM tasks
+            WHERE schedule_cron IS NOT NULL AND schedule_cron != '';
+          `);
+        });
+        tx();
+        console.log(
+          `[migrate] cron-split: moved ${migratable.n} row(s) tasks → scheduled_runs`,
+        );
+      }
+    }
+  } catch (err) {
+    // Don't crash boot on a migration hiccup — log loudly and continue. The
+    // cron scheduler will still pick up rows already in `scheduled_runs`.
+    console.error("[migrate] cron-split failed:", err);
+  }
+
+  // -------------------------------------------------------------------------
+  // Milestones + per-task deadlines
+  //
+  // Milestones group work tasks within a project. Per-task `due_date` lives on
+  // `tasks` so the kanban/backlog can surface "overdue" / "due this week"
+  // without joining. Both additions are idempotent — duplicate-column errors
+  // on the ALTER TABLE are swallowed, the CREATE TABLE is IF NOT EXISTS.
+  //
+  // Best-effort one-time backup before mutating data in non-test mode. We
+  // skip when a backup with this prefix already exists for today so repeated
+  // dev restarts don't fill the data dir.
+  // -------------------------------------------------------------------------
+  try {
+    const tasksHasMilestoneCol = (
+      db
+        .prepare<unknown[], { name: string }>(`PRAGMA table_info(tasks)`)
+        .all() as { name: string }[]
+    ).some((r) => r.name === "milestone_id");
+    if (!tasksHasMilestoneCol && process.env.NODE_ENV !== "test") {
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const existingBackups = fs
+          .readdirSync(DATA_DIR)
+          .filter((f) => f.startsWith(`gaia.db.bak-pre-milestones-${today}`));
+        if (existingBackups.length === 0) {
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          const backupPath = path.join(
+            DATA_DIR,
+            `gaia.db.bak-pre-milestones-${ts}`,
+          );
+          fs.copyFileSync(DB_PATH, backupPath);
+          console.log(`[migrate] wrote backup ${backupPath}`);
+        }
+      } catch (err) {
+        console.warn("[migrate] milestones backup failed (continuing):", err);
+      }
+    }
+  } catch (err) {
+    console.warn("[migrate] milestones backup probe failed (continuing):", err);
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS milestones (
+      id           TEXT PRIMARY KEY,
+      project_id   TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      description  TEXT,
+      due_date     INTEGER,
+      status       TEXT NOT NULL DEFAULT 'active',
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
+    CREATE INDEX IF NOT EXISTS idx_milestones_status  ON milestones(status);
+  `);
+
+  const taskMilestoneAdds: Array<[string, string]> = [
+    ["milestone_id", "TEXT"],
+    ["due_date", "INTEGER"],
+  ];
+  for (const [col, decl] of taskMilestoneAdds) {
+    try {
+      db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${decl}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column/i.test(msg)) throw err;
+    }
+  }
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tasks_milestone ON tasks(milestone_id)`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`,
+  );
+
+  // -------------------------------------------------------------------------
+  // Internal-projects cleanup
+  //
+  // The session-watcher historically auto-registered any directory that had a
+  // Claude Code transcript as a "project". That includes agent dirs (which
+  // have their own transcripts when an agent runs), the user's home, and tmp
+  // dirs — all of which pollute the user-facing /projects grid.
+  //
+  // This migration walks the `projects` rows once on boot and flips
+  // `is_internal = 1` for any whose path matches the internal-cwd rules
+  // (agents dir, agents-test dir, /tmp, /private/tmp, /var/folders, or the
+  // user's home dir itself). Idempotent — runs every boot but only updates
+  // rows whose flag isn't already set. Best-effort backup is written if any
+  // rows actually need flipping, with a unique-per-prefix guard so dev
+  // restarts don't fill the data dir.
+  // -------------------------------------------------------------------------
+  try {
+    const candidates = db
+      .prepare<unknown[], { id: string; path: string; is_internal: number }>(
+        `SELECT id, path, is_internal FROM projects WHERE is_internal = 0`,
+      )
+      .all() as { id: string; path: string; is_internal: number }[];
+
+    const HOME = (() => {
+      try {
+        return path.resolve(os.homedir());
+      } catch {
+        return "";
+      }
+    })();
+    const AGENTS_TEST_DIR = path.join(PROJECT_ROOT, "agents-test");
+
+    const isUnder = (abs: string, root: string): boolean => {
+      const r = path.resolve(root);
+      if (abs === r) return true;
+      const rel = path.relative(r, abs);
+      return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+    };
+
+    const isInternalPath = (p: string): boolean => {
+      if (!p || typeof p !== "string") return false;
+      let abs: string;
+      try {
+        abs = path.resolve(p);
+      } catch {
+        return false;
+      }
+      if (HOME && abs === HOME) return true;
+      if (isUnder(abs, AGENTS_DIR)) return true;
+      if (isUnder(abs, AGENTS_TEST_DIR)) return true;
+      // Any path that has `/agents/` or `/agents-test/` as a directory
+      // segment (catches alternate checkouts of this project, e.g. an
+      // iCloud-synced copy whose agents/<slug> dirs live outside
+      // PROJECT_ROOT).
+      const segments = abs.split(path.sep).filter(Boolean);
+      for (let i = 0; i < segments.length - 1; i++) {
+        if (segments[i] === "agents" || segments[i] === "agents-test") {
+          return true;
+        }
+      }
+      if (isUnder(abs, "/tmp")) return true;
+      if (isUnder(abs, "/private/tmp")) return true;
+      if (isUnder(abs, "/var/folders")) return true;
+      return false;
+    };
+
+    const toFlip = candidates.filter((c) => isInternalPath(c.path));
+
+    if (toFlip.length > 0) {
+      // One-time backup, prod DB only, before mutating any row.
+      if (process.env.NODE_ENV !== "test" && process.env.GAIA_TEST_MODE !== "1") {
+        try {
+          const existingBackups = fs
+            .readdirSync(DATA_DIR)
+            .filter((f) => f.startsWith("gaia.db.bak-pre-internal-cleanup-"));
+          if (existingBackups.length === 0) {
+            const ts = new Date().toISOString().replace(/[:.]/g, "-");
+            const backupPath = path.join(
+              DATA_DIR,
+              `gaia.db.bak-pre-internal-cleanup-${ts}`,
+            );
+            fs.copyFileSync(DB_PATH, backupPath);
+            console.log(`[migrate] wrote backup ${backupPath}`);
+          }
+        } catch (err) {
+          console.warn(
+            "[migrate] internal-cleanup backup failed (continuing):",
+            err,
+          );
+        }
+      }
+
+      const update = db.prepare(
+        `UPDATE projects SET is_internal = 1, updated_at = ? WHERE id = ?`,
+      );
+      const now = Date.now();
+      const tx = db.transaction(() => {
+        for (const row of toFlip) update.run(now, row.id);
+      });
+      tx();
+      console.log(
+        `[migrate] internal-cleanup: flipped ${toFlip.length} project row(s) to is_internal=1`,
+      );
+    }
+  } catch (err) {
+    console.error("[migrate] internal-cleanup failed:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,6 +1594,24 @@ export type TaskFilters = {
   status?: TaskStatus;
   search?: string;
   project_id?: string;
+  /**
+   * Filter by milestone assignment. Pass a string id to scope to that
+   * milestone; pass `null` to filter to tasks with NO milestone.
+   */
+  milestone_id?: string | null;
+  /** ms-epoch upper bound — tasks with due_date strictly before this value. */
+  due_before?: number;
+  /**
+   * Pre-baked deadline buckets used by the kanban / overview widgets. Only
+   * one applies at a time. Always restricts to tasks where status is not
+   * `done` or `archived` (the "active" set).
+   *
+   * - `overdue`: due_date < now AND due_date IS NOT NULL
+   * - `this_week`: due_date BETWEEN now AND now+7d (inclusive)
+   * - `today`: due_date BETWEEN now AND end-of-today-local
+   * - `no_due`: due_date IS NULL
+   */
+  due_status?: "overdue" | "this_week" | "today" | "no_due";
 };
 
 function buildTaskWhere(
@@ -1279,6 +1638,41 @@ function buildTaskWhere(
   if (filters?.project_id) {
     where.push("project_id = ?");
     params.push(filters.project_id);
+  }
+  if (filters && "milestone_id" in filters) {
+    if (filters.milestone_id === null) {
+      where.push("milestone_id IS NULL");
+    } else if (typeof filters.milestone_id === "string") {
+      where.push("milestone_id = ?");
+      params.push(filters.milestone_id);
+    }
+  }
+  if (typeof filters?.due_before === "number") {
+    where.push("due_date IS NOT NULL AND due_date < ?");
+    params.push(filters.due_before);
+  }
+  if (filters?.due_status) {
+    const now = Date.now();
+    if (filters.due_status === "overdue") {
+      where.push(
+        "due_date IS NOT NULL AND due_date < ? AND status NOT IN ('done','archived')",
+      );
+      params.push(now);
+    } else if (filters.due_status === "this_week") {
+      where.push(
+        "due_date IS NOT NULL AND due_date >= ? AND due_date <= ? AND status NOT IN ('done','archived')",
+      );
+      params.push(now, now + 7 * 86_400_000);
+    } else if (filters.due_status === "today") {
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      where.push(
+        "due_date IS NOT NULL AND due_date >= ? AND due_date <= ? AND status NOT IN ('done','archived')",
+      );
+      params.push(now, endOfToday.getTime());
+    } else if (filters.due_status === "no_due") {
+      where.push("due_date IS NULL AND status NOT IN ('done','archived')");
+    }
   }
   if (filters?.search && filters.search.trim()) {
     where.push("(LOWER(title) LIKE ? OR LOWER(COALESCE(description,'')) LIKE ?)");
@@ -1329,6 +1723,8 @@ export type InsertTaskInput = {
   playbook?: string | null;
   created_at?: number;
   project_id?: string | null;
+  milestone_id?: string | null;
+  due_date?: number | null;
 };
 
 export function insertTask(input: InsertTaskInput): TaskRow {
@@ -1343,8 +1739,9 @@ export function insertTask(input: InsertTaskInput): TaskRow {
       `INSERT INTO tasks (
         id, title, employee_id, skill, schedule_cron, human_label,
         enabled, last_run_id, last_run_at,
-        priority, status, description, created_at, playbook, project_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
+        priority, status, description, created_at, playbook, project_id,
+        milestone_id, due_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -1360,6 +1757,8 @@ export function insertTask(input: InsertTaskInput): TaskRow {
       created_at,
       input.playbook ?? null,
       input.project_id ?? null,
+      input.milestone_id ?? null,
+      input.due_date ?? null,
     );
   return getTask(id)!;
 }
@@ -1378,6 +1777,8 @@ export type UpdateTaskPatch = Partial<{
   description: string | null;
   playbook: string | null;
   project_id: string | null;
+  milestone_id: string | null;
+  due_date: number | null;
 }>;
 
 const TASK_PATCH_KEYS = [
@@ -1394,6 +1795,8 @@ const TASK_PATCH_KEYS = [
   "description",
   "playbook",
   "project_id",
+  "milestone_id",
+  "due_date",
 ] as const;
 
 export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefined {
@@ -1422,6 +1825,349 @@ export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefi
 export function deleteTask(id: string): boolean {
   const info = getDb().prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
   return info.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Milestones
+// ---------------------------------------------------------------------------
+
+export type MilestoneFilters = {
+  project_id: string;
+  status?: MilestoneStatus;
+  search?: string;
+};
+
+export function listMilestones(filters: MilestoneFilters): MilestoneRow[] {
+  const where: string[] = ["project_id = ?"];
+  const params: unknown[] = [filters.project_id];
+  if (filters.status) {
+    where.push("status = ?");
+    params.push(filters.status);
+  }
+  if (filters.search && filters.search.trim()) {
+    where.push("(LOWER(name) LIKE ? OR LOWER(COALESCE(description,'')) LIKE ?)");
+    const term = `%${filters.search.trim().toLowerCase()}%`;
+    params.push(term, term);
+  }
+  return getDb()
+    .prepare(
+      `SELECT * FROM milestones WHERE ${where.join(" AND ")}
+       ORDER BY sort_order ASC,
+                COALESCE(due_date, 9999999999999) ASC,
+                created_at DESC`,
+    )
+    .all(...params) as MilestoneRow[];
+}
+
+export function getMilestone(id: string): MilestoneRow | undefined {
+  return getDb()
+    .prepare(`SELECT * FROM milestones WHERE id = ?`)
+    .get(id) as MilestoneRow | undefined;
+}
+
+export type InsertMilestoneInput = {
+  id?: string;
+  project_id: string;
+  name: string;
+  description?: string | null;
+  due_date?: number | null;
+  status?: MilestoneStatus;
+  sort_order?: number;
+};
+
+export function insertMilestone(input: InsertMilestoneInput): MilestoneRow {
+  const id = input.id ?? randomUUID();
+  const now = Date.now();
+  getDb()
+    .prepare(
+      `INSERT INTO milestones (
+        id, project_id, name, description, due_date, status,
+        sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.project_id,
+      input.name,
+      input.description ?? null,
+      input.due_date ?? null,
+      input.status ?? "active",
+      input.sort_order ?? 0,
+      now,
+      now,
+    );
+  return getMilestone(id)!;
+}
+
+export type UpdateMilestonePatch = Partial<{
+  name: string;
+  description: string | null;
+  due_date: number | null;
+  status: MilestoneStatus;
+  sort_order: number;
+}>;
+
+const MILESTONE_PATCH_KEYS = [
+  "name",
+  "description",
+  "due_date",
+  "status",
+  "sort_order",
+] as const;
+
+export function updateMilestone(
+  id: string,
+  patch: UpdateMilestonePatch,
+): MilestoneRow | undefined {
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  for (const key of MILESTONE_PATCH_KEYS) {
+    if (key in patch) {
+      setClauses.push(`${key} = ?`);
+      values.push((patch as Record<string, unknown>)[key]);
+    }
+  }
+  if (setClauses.length === 0) return getMilestone(id);
+  setClauses.push("updated_at = ?");
+  values.push(Date.now());
+  values.push(id);
+  getDb()
+    .prepare(`UPDATE milestones SET ${setClauses.join(", ")} WHERE id = ?`)
+    .run(...values);
+  return getMilestone(id);
+}
+
+/**
+ * Delete a milestone. Does NOT cascade-delete tasks; instead, any task whose
+ * `milestone_id` points at this milestone is nulled out so the work item
+ * survives the deletion. Returns true if a milestone row was removed.
+ */
+export function deleteMilestone(id: string): boolean {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE tasks SET milestone_id = NULL WHERE milestone_id = ?`).run(id);
+    const info = db.prepare(`DELETE FROM milestones WHERE id = ?`).run(id);
+    return info.changes > 0;
+  });
+  return tx();
+}
+
+/**
+ * Aggregate counts for the Tasks summary widgets. Excludes `done` and
+ * `archived` work from the urgency rollups since those are no longer active.
+ * `total` reflects the same "active" filter so the math (overdue + this_week
+ * + in_progress + …) lines up with what the UI shows.
+ */
+export type TaskDueSummary = {
+  total: number;
+  overdue: number;
+  due_this_week: number;
+  due_today: number;
+  in_progress: number;
+};
+
+export function getTaskDueSummary(scope?: {
+  project_id?: string;
+}): TaskDueSummary {
+  const db = getDb();
+  const now = Date.now();
+  const weekAhead = now + 7 * 86_400_000;
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+
+  const projectClause = scope?.project_id ? "AND project_id = ?" : "";
+  const baseParams: unknown[] = scope?.project_id ? [scope.project_id] : [];
+
+  const totalRow = db
+    .prepare<unknown[], { n: number }>(
+      `SELECT COUNT(*) AS n FROM tasks
+       WHERE status NOT IN ('done','archived') ${projectClause}`,
+    )
+    .get(...baseParams) as { n: number };
+
+  const overdueRow = db
+    .prepare<unknown[], { n: number }>(
+      `SELECT COUNT(*) AS n FROM tasks
+       WHERE status NOT IN ('done','archived')
+         AND due_date IS NOT NULL AND due_date < ? ${projectClause}`,
+    )
+    .get(now, ...baseParams) as { n: number };
+
+  const weekRow = db
+    .prepare<unknown[], { n: number }>(
+      `SELECT COUNT(*) AS n FROM tasks
+       WHERE status NOT IN ('done','archived')
+         AND due_date IS NOT NULL
+         AND due_date >= ? AND due_date <= ? ${projectClause}`,
+    )
+    .get(now, weekAhead, ...baseParams) as { n: number };
+
+  const todayRow = db
+    .prepare<unknown[], { n: number }>(
+      `SELECT COUNT(*) AS n FROM tasks
+       WHERE status NOT IN ('done','archived')
+         AND due_date IS NOT NULL
+         AND due_date >= ? AND due_date <= ? ${projectClause}`,
+    )
+    .get(now, endOfToday.getTime(), ...baseParams) as { n: number };
+
+  const inProgressRow = db
+    .prepare<unknown[], { n: number }>(
+      `SELECT COUNT(*) AS n FROM tasks
+       WHERE status = 'in_progress' ${projectClause}`,
+    )
+    .get(...baseParams) as { n: number };
+
+  return {
+    total: totalRow.n,
+    overdue: overdueRow.n,
+    due_this_week: weekRow.n,
+    due_today: todayRow.n,
+    in_progress: inProgressRow.n,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled runs (cron-fired autonomous tasks)
+//
+// Decoupled from `tasks` so the kanban / backlog schema can be exclusively
+// about work items. The cron scheduler (`server/cron.ts`) reads from here,
+// the /schedule page manages these rows, and the in-process cron runner
+// fires them. Helpers mirror the task helpers above in shape.
+// ---------------------------------------------------------------------------
+
+export type ScheduledRunFilters = {
+  employee_id?: string;
+  enabled?: boolean;
+};
+
+export function listScheduledRuns(filters?: ScheduledRunFilters): ScheduledRunRow[] {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filters?.employee_id) {
+    where.push("employee_id = ?");
+    params.push(filters.employee_id);
+  }
+  if (filters?.enabled !== undefined) {
+    where.push("enabled = ?");
+    params.push(filters.enabled ? 1 : 0);
+  }
+  const sql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+  return getDb()
+    .prepare(
+      `SELECT * FROM scheduled_runs${sql} ORDER BY created_at DESC, id ASC`,
+    )
+    .all(...params) as ScheduledRunRow[];
+}
+
+export function getScheduledRun(id: string): ScheduledRunRow | undefined {
+  return getDb()
+    .prepare(`SELECT * FROM scheduled_runs WHERE id = ?`)
+    .get(id) as ScheduledRunRow | undefined;
+}
+
+export type InsertScheduledRunInput = {
+  id?: string;
+  employee_id: string;
+  skill?: string | null;
+  playbook?: string | null;
+  schedule_cron: string;
+  human_label?: string | null;
+  enabled?: 0 | 1 | boolean;
+  last_run_id?: string | null;
+  last_run_at?: number | null;
+  created_at?: number;
+};
+
+export function insertScheduledRun(
+  input: InsertScheduledRunInput,
+): ScheduledRunRow {
+  const id = input.id ?? randomUUID();
+  const created_at = input.created_at ?? Date.now();
+  const enabledVal: 0 | 1 =
+    input.enabled === undefined
+      ? 1
+      : (Number(Boolean(input.enabled)) as 0 | 1);
+  getDb()
+    .prepare(
+      `INSERT INTO scheduled_runs (
+        id, employee_id, skill, playbook, schedule_cron,
+        human_label, enabled, last_run_id, last_run_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.employee_id,
+      input.skill ?? null,
+      input.playbook ?? null,
+      input.schedule_cron,
+      input.human_label ?? null,
+      enabledVal,
+      input.last_run_id ?? null,
+      input.last_run_at ?? null,
+      created_at,
+    );
+  return getScheduledRun(id)!;
+}
+
+export type UpdateScheduledRunPatch = Partial<{
+  employee_id: string;
+  skill: string | null;
+  playbook: string | null;
+  schedule_cron: string;
+  human_label: string | null;
+  enabled: 0 | 1 | boolean;
+  last_run_id: string | null;
+  last_run_at: number | null;
+}>;
+
+const SCHEDULED_RUN_PATCH_KEYS = [
+  "employee_id",
+  "skill",
+  "playbook",
+  "schedule_cron",
+  "human_label",
+  "enabled",
+  "last_run_id",
+  "last_run_at",
+] as const;
+
+export function updateScheduledRun(
+  id: string,
+  patch: UpdateScheduledRunPatch,
+): ScheduledRunRow | undefined {
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  for (const key of SCHEDULED_RUN_PATCH_KEYS) {
+    if (key in patch) {
+      let v: unknown = (patch as Record<string, unknown>)[key];
+      if (key === "enabled") v = Number(Boolean(v)) as 0 | 1;
+      setClauses.push(`${key} = ?`);
+      values.push(v);
+    }
+  }
+  if (setClauses.length === 0) return getScheduledRun(id);
+  values.push(id);
+  getDb()
+    .prepare(
+      `UPDATE scheduled_runs SET ${setClauses.join(", ")} WHERE id = ?`,
+    )
+    .run(...values);
+  return getScheduledRun(id);
+}
+
+export function deleteScheduledRun(id: string): boolean {
+  const info = getDb()
+    .prepare(`DELETE FROM scheduled_runs WHERE id = ?`)
+    .run(id);
+  return info.changes > 0;
+}
+
+export function toggleScheduledRun(
+  id: string,
+  enabled: boolean,
+): ScheduledRunRow | undefined {
+  return updateScheduledRun(id, { enabled });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,29 +1,26 @@
 /**
  * PATCH  /api/tasks/[id]
  *   body: partial of {
- *     title, employee_id, skill, schedule_cron, human_label, project_id,
- *     priority, description, enabled
+ *     title, employee_id, project_id, priority, status, description
  *   }
  *   → { task }
  *
- *   Validates `schedule_cron` via node-cron's `cron.validate()` when present.
- *   Returns 404 if `id` is unknown, 400 on bad cron / bad body shape.
+ *   Cron fields (`schedule_cron`, `human_label`, `skill`, `enabled`) are
+ *   rejected here after the cron-split migration — those belong on
+ *   /api/scheduled-runs/[id].
  *
  * DELETE /api/tasks/[id]
  *   → { ok: true }
  *
- *   Hard-deletes the row (per Wave 1 docs — `deleteTask()` is a hard delete).
- *   The cron scheduler's 30s sync loop drops the registered job automatically.
- *
- * Wave 4 — wires the Schedule page's Edit/Delete row affordances. Toggle stays
- * on its own dedicated route (`/api/tasks/[id]/toggle`).
+ *   Hard-deletes the work task row. (Soft-archive available via
+ *   PATCH { status: 'archived' }.)
  */
-import nodeCron from "node-cron";
 import {
   deleteTask,
   getTask,
   updateTask,
   type TaskPriority,
+  type TaskStatus,
   type UpdateTaskPatch,
 } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
@@ -40,22 +37,46 @@ function notFound(id: string): Response {
 }
 
 const PRIORITIES: readonly TaskPriority[] = ["high", "medium", "low"] as const;
+const STATUSES: readonly TaskStatus[] = [
+  "backlog",
+  "todo",
+  "in_progress",
+  "review",
+  "done",
+  "archived",
+] as const;
 
 type PatchBody = {
   title?: unknown;
   employee_id?: unknown;
-  skill?: unknown;
-  schedule_cron?: unknown;
-  human_label?: unknown;
   project_id?: unknown;
   priority?: unknown;
+  status?: unknown;
   description?: unknown;
+  milestone_id?: unknown;
+  due_date?: unknown;
+  /** Reject these — cron fields belong on /api/scheduled-runs/[id]. */
+  schedule_cron?: unknown;
+  skill?: unknown;
+  human_label?: unknown;
   enabled?: unknown;
 };
 
 function strOrNull(v: unknown): string | null {
   if (typeof v !== "string") return null;
   return v.trim() === "" ? null : v.trim();
+}
+
+function parseDateInput(v: unknown): number | null | "__bad__" {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (trimmed === "") return null;
+    const d = new Date(trimmed);
+    if (Number.isFinite(d.getTime())) return d.getTime();
+  }
+  return "__bad__";
 }
 
 export async function PATCH(
@@ -76,6 +97,15 @@ export async function PATCH(
     return badRequest("body must be an object");
   }
 
+  // Cron-split guard — reject any field that the cron-runs endpoint owns.
+  for (const cronField of ["schedule_cron", "skill", "human_label", "enabled"]) {
+    if (cronField in body && (body as Record<string, unknown>)[cronField] !== null) {
+      return badRequest(
+        `'${cronField}' is no longer accepted here — use /api/scheduled-runs/${id}`,
+      );
+    }
+  }
+
   const patch: UpdateTaskPatch = {};
 
   if ("title" in body) {
@@ -89,28 +119,6 @@ export async function PATCH(
       return badRequest("employee_id must be a string or null");
     }
     patch.employee_id = strOrNull(body.employee_id);
-  }
-  if ("skill" in body) {
-    if (body.skill !== null && typeof body.skill !== "string") {
-      return badRequest("skill must be a string or null");
-    }
-    patch.skill = strOrNull(body.skill);
-  }
-  if ("schedule_cron" in body) {
-    if (body.schedule_cron !== null && typeof body.schedule_cron !== "string") {
-      return badRequest("schedule_cron must be a string or null");
-    }
-    const next = strOrNull(body.schedule_cron);
-    if (next && !nodeCron.validate(next)) {
-      return badRequest(`invalid cron expression: '${next}'`);
-    }
-    patch.schedule_cron = next;
-  }
-  if ("human_label" in body) {
-    if (body.human_label !== null && typeof body.human_label !== "string") {
-      return badRequest("human_label must be a string or null");
-    }
-    patch.human_label = strOrNull(body.human_label);
   }
   if ("project_id" in body) {
     if (body.project_id !== null && typeof body.project_id !== "string") {
@@ -127,17 +135,31 @@ export async function PATCH(
     }
     patch.priority = body.priority as TaskPriority;
   }
+  if ("status" in body) {
+    if (
+      typeof body.status !== "string" ||
+      !STATUSES.includes(body.status as TaskStatus)
+    ) {
+      return badRequest(`status must be one of ${STATUSES.join(", ")}`);
+    }
+    patch.status = body.status as TaskStatus;
+  }
   if ("description" in body) {
     if (body.description !== null && typeof body.description !== "string") {
       return badRequest("description must be a string or null");
     }
     patch.description = strOrNull(body.description);
   }
-  if ("enabled" in body) {
-    if (typeof body.enabled !== "boolean") {
-      return badRequest("enabled must be a boolean");
+  if ("milestone_id" in body) {
+    if (body.milestone_id !== null && typeof body.milestone_id !== "string") {
+      return badRequest("milestone_id must be a string or null");
     }
-    patch.enabled = body.enabled;
+    patch.milestone_id = strOrNull(body.milestone_id);
+  }
+  if ("due_date" in body) {
+    const parsed = parseDateInput(body.due_date);
+    if (parsed === "__bad__") return badRequest("due_date must be number|string|null");
+    patch.due_date = parsed;
   }
 
   const task = updateTask(id, patch);

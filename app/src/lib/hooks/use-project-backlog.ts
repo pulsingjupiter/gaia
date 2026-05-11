@@ -36,6 +36,8 @@ export type TaskRow = {
   created_at: number | null;
   playbook: string | null;
   project_id: string | null;
+  milestone_id: string | null;
+  due_date: number | null;
 };
 
 export type AddTaskInput = {
@@ -44,6 +46,8 @@ export type AddTaskInput = {
   employee_id?: string | null;
   priority?: TaskPriority;
   playbook?: string | null;
+  milestone_id?: string | null;
+  due_date?: number | string | null;
 };
 
 export type UpdateTaskInput = Partial<{
@@ -53,6 +57,8 @@ export type UpdateTaskInput = Partial<{
   priority: TaskPriority;
   status: TaskStatus;
   playbook: string | null;
+  milestone_id: string | null;
+  due_date: number | string | null;
 }>;
 
 export type UseProjectBacklog = {
@@ -119,6 +125,8 @@ export function useProjectBacklog(
           priority: input.priority ?? "medium",
           playbook: input.playbook ?? null,
           project_id: projectId,
+          milestone_id: input.milestone_id ?? null,
+          due_date: input.due_date ?? null,
         };
         const res = await fetch(`/api/backlog`, {
           method: "POST",
