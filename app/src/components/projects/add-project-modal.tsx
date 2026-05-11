@@ -216,7 +216,7 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
           <Field
             label="Path"
             required
-            hint="absolute path, e.g. /Users/adrian/code/myproject"
+            hint="absolute path, e.g. /Users/you/code/myproject"
           >
             <div className="flex items-stretch gap-2">
               <input

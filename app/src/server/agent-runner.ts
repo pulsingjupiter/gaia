@@ -37,7 +37,7 @@ import {
   type RunEventType,
 } from "./db.ts";
 
-const CLAUDE_BIN = "/Users/adrian/.local/bin/claude";
+const CLAUDE_BIN = process.env.GAIA_CLAUDE_BIN ?? "claude";
 
 // ---------------------------------------------------------------------------
 // Event bus

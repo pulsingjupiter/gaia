@@ -1,33 +1,23 @@
-# Agent Site — Project Instructions
+# Gaia
 
-## ⚠️ MANDATORY PROTOCOL — Read Every Session
+You are working inside the Gaia project root — a Next.js dashboard that orchestrates Claude Code sessions across named agent personas.
 
-**TIMESTAMP FIRST:** Before every response, run `date '+%Y-%m-%d %H:%M:%S %Z'` via terminal and display it at the top of the reply as `🕐 YYYY-MM-DD HH:MM:SS TZ`. No exceptions.
+## Quick facts
 
-**LESSONS:** Before any task, read `tasks/lessons.md`. After any correction from Adrian, append the pattern immediately.
+- **App lives under** `app/` (Next.js 16 + Turbopack, React 19, Tailwind v4, SQLite via better-sqlite3).
+- **Agent personas** live under `agents/<slug>/` — each has a `CLAUDE.md` (the persona) and `.claude/skills/<skill>/SKILL.md` (the playbooks).
+- **Dashboard**: `cd app && npm run dev` → http://localhost:7878
+- **Test dashboard** (isolated DB + agents): `cd app && npm run dev:test` → http://localhost:9898
+- **Setup**: `./setup.sh` from repo root (idempotent — checks prereqs, npm install, scaffolds agents).
 
-**TODO:** Check `tasks/todo.md` for current task state before starting work.
+## When you make changes
 
----
+- Match the existing TypeScript style: explicit types, no `any`, server routes use `runtime = "nodejs"` and `dynamic = "force-dynamic"`.
+- Database queries go through helpers in `app/src/server/db.ts`. Schema is in there too.
+- File-system writes to agent dirs should use the path-safe helpers in `app/src/server/agent-scaffold.ts`.
+- Adding a new API route: read `app/AGENTS.md` first — Next.js 16 has breaking changes from older versions.
 
-## Critical Paths
+## When the user runs into trouble
 
-| What | Path |
-|------|------|
-| **Project root** | `/Users/adrian/Developer/agent-site` |
-| **Tasks** | `tasks/todo.md`, `tasks/lessons.md` |
-| **Memory index** | `memory/MEMORY.md` |
-
----
-
-## Tech Stack
-
-<!-- Fill in when known -->
-
----
-
-## Preferences
-
-- Read `tasks/lessons.md` and `tasks/todo.md` at the start of every session
-- Append lessons immediately after any correction — do not defer
-- Mark todo items `[x]` as done the moment they are completed
+- Setup banner on the dashboard surfaces unmet prereqs with "Open Terminal" remediation buttons.
+- For partner / new-machine installs, see `INSTALL.md` at repo root — covers prereqs, troubleshooting, and a paste-ready prompt for Claude Code to do the install.

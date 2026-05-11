@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-const CLAUDE_BIN = "/Users/adrian/.local/bin/claude";
+const CLAUDE_BIN = process.env.GAIA_CLAUDE_BIN ?? "claude";
 
 export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   ensureSeeded();

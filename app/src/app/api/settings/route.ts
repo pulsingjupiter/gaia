@@ -31,10 +31,10 @@ export type AppearanceSettings = {
 
 export const DEFAULT_SETTINGS = {
   profile: {
-    name: "Adrian",
-    email: "adrianlee2026@gmail.com",
-    timezone: "Asia/Singapore",
-    greeting: "Adrian",
+    name: "",
+    email: "",
+    timezone: "",
+    greeting: "",
   } satisfies ProfileSettings,
   models: {
     default_model: "claude-sonnet-4-6",

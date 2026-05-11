@@ -66,3 +66,8 @@ app/.git.archive-*
 from others/
 henry-avatar.jpg
 *.bak.before-*
+
+# Personal notes — kept locally, not for remote
+tasks/lessons.md
+tasks/todo.md
+memory/
