@@ -2,7 +2,8 @@
  * POST /api/agents/[id]/launch
  *   body: {
  *     mode: 'open' | 'continue' | 'copy',
- *     terminal?: 'Terminal' | 'iTerm2'   // default 'Terminal'; ignored when mode='copy'
+ *     terminal?: 'Terminal' | 'iTerm2',  // default 'Terminal'; ignored when mode='copy'
+ *     cwd?: string                       // optional working-dir override
  *   }
  *
  *   - mode='open'     → spawn `osascript` to launch the chosen terminal app
@@ -12,13 +13,23 @@
  *   - mode='copy'     → no side effect; returns { ok, command } so the client
  *                       can copy the continue command to the clipboard.
  *
- * Adrian wants to drive the terminal interactively, so we deliberately do
- * NOT pass `--dangerously-skip-permissions` here — normal permission prompts
+ *   - cwd override (Overview tab — "Launch agent here"): when supplied the
+ *     command `cd`s into that directory instead of the agent's own
+ *     agent_dir. The path is validated to exist on disk before we pass it
+ *     to the AppleScript builder; this keeps the agent persona (CLAUDE.md
+ *     etc.) accessible only because Claude Code walks the directory tree
+ *     for context, but pins the session to the project root so its file
+ *     edits land there.
+ *
+ * The user drives the terminal interactively, so we deliberately do NOT
+ * pass `--dangerously-skip-permissions` here — normal permission prompts
  * are expected.
  *
  * Mirrors the AppleScript helpers in /api/sessions/[id]/resume but is keyed
  * by employee/agent rather than session.
  */
+import { statSync } from "node:fs";
+
 import { getEmployee } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 import {
@@ -68,9 +79,13 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     );
   }
 
-  let body: { mode?: string; terminal?: string } = {};
+  let body: { mode?: string; terminal?: string; cwd?: string } = {};
   try {
-    body = (await req.json()) as { mode?: string; terminal?: string };
+    body = (await req.json()) as {
+      mode?: string;
+      terminal?: string;
+      cwd?: string;
+    };
   } catch {
     // empty body OK — we'll fail validation below
   }
@@ -83,7 +98,27 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     );
   }
 
-  const command = buildCommand(employee.agent_dir, mode as "open" | "continue" | "copy");
+  let workingDir = employee.agent_dir;
+  if (typeof body.cwd === "string" && body.cwd.trim()) {
+    const override = body.cwd.trim();
+    try {
+      const st = statSync(override);
+      if (!st.isDirectory()) {
+        return Response.json(
+          { error: "cwd is not a directory" },
+          { status: 400 },
+        );
+      }
+    } catch {
+      return Response.json(
+        { error: "cwd does not exist on disk" },
+        { status: 400 },
+      );
+    }
+    workingDir = override;
+  }
+
+  const command = buildCommand(workingDir, mode as "open" | "continue" | "copy");
 
   if (mode === "copy") {
     return Response.json({ ok: true, command });

@@ -1,38 +1,59 @@
 "use client";
 /**
- * /projects/[id] — single-project detail page with 4 tabs.
+ * /projects/[id] — single-project detail page with 6 tabs.
  *
- * Tab routing: We use internal `useState` (not URL routes) for the four
- * tabs because the `/projects/[id]/sessions/[sid]` segment is its own page
- * (Wave 2C) and would conflict with a `/projects/[id]/sessions` route here.
- * Clicking a session row navigates away to that page.
+ * Tab routing: persisted to `?tab=overview|milestones|backlog|sessions|files|settings`
+ * via `router.replace` so deep-links and reloads keep the user in place. The
+ * `/projects/[id]/sessions/[sid]` segment is its own page (Wave 2C); clicking
+ * a session row navigates away to that page.
  *
- * The "Edit" button in the header simply scrolls + activates the Settings
- * tab — it's the same form, no separate modal.
+ * Overview is the default landing surface — it composes the status strip,
+ * description editor, active milestones, recent sessions, and quick actions
+ * into one rail so a fresh visit doesn't require tab-hunting.
+ *
+ * The "Edit" button in the header switches to the Settings tab.
  */
-import { use, useState } from "react";
-import { Flag, ListTodo, Settings as SettingsIcon, FileText, Activity, Loader2 } from "lucide-react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Flag, ListTodo, Settings as SettingsIcon, FileText, Activity, Layout, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { useProjectDetail } from "@/lib/hooks/use-project-detail";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { useEmployees } from "@/components/employees/employees-context";
 import { ProjectHeader } from "@/components/projects/detail/project-header";
-import { ProjectStatusStrip } from "@/components/projects/detail/status-strip";
+import { OverviewTab } from "@/components/projects/detail/overview-tab";
 import { SessionsTab } from "@/components/projects/detail/sessions-tab";
 import { MilestonesTab } from "@/components/projects/detail/milestones-tab";
 import { BacklogTab } from "@/components/projects/detail/backlog-tab";
 import { FilesTab } from "@/components/projects/detail/files-tab";
 import { SettingsTab } from "@/components/projects/detail/settings-tab";
 import { PlanWithClaudeModal } from "@/components/projects/plan-with-claude-modal";
+import { AddTaskModal } from "@/components/tasks/add-task-modal";
 
-type TabId = "sessions" | "milestones" | "backlog" | "files" | "settings";
+type TabId =
+  | "overview"
+  | "milestones"
+  | "backlog"
+  | "sessions"
+  | "files"
+  | "settings";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "sessions", label: "Sessions", icon: Activity },
+  { id: "overview", label: "Overview", icon: Layout },
   { id: "milestones", label: "Milestones", icon: Flag },
   { id: "backlog", label: "Backlog", icon: ListTodo },
+  { id: "sessions", label: "Sessions", icon: Activity },
   { id: "files", label: "Files", icon: FileText },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
+
+const VALID_TABS = new Set<TabId>(TABS.map((t) => t.id));
+
+function parseTab(raw: string | null): TabId {
+  if (raw && (VALID_TABS as Set<string>).has(raw)) return raw as TabId;
+  return "overview";
+}
 
 export default function ProjectDetailPage({
   params,
@@ -40,11 +61,49 @@ export default function ProjectDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get("tab") ?? null;
+  const tab = parseTab(tabParam);
+
   const detail = useProjectDetail(id);
-  const [tab, setTab] = useState<TabId>("sessions");
+  const { projects } = useProjects();
+  const { employees } = useEmployees();
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [planNonce, setPlanNonce] = useState(0);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
+
+  const setTab = useCallback(
+    (next: TabId) => {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      if (next === "overview") params.delete("tab");
+      else params.set("tab", next);
+      const qs = params.toString();
+      router.replace(qs ? `/projects/${id}?${qs}` : `/projects/${id}`, {
+        scroll: false,
+      });
+    },
+    [router, searchParams, id],
+  );
+
+  // Keep the URL canonical: if someone lands on `?tab=overview`, strip it so
+  // the default surface uses the cleanest URL. Skip when already clean.
+  useEffect(() => {
+    if (tabParam === "overview") {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.delete("tab");
+      const qs = params.toString();
+      router.replace(qs ? `/projects/${id}?${qs}` : `/projects/${id}`, {
+        scroll: false,
+      });
+    }
+  }, [tabParam, router, searchParams, id]);
+
+  const projectsForModal = useMemo(
+    () => projects.filter((p) => p.archived === 0),
+    [projects],
+  );
 
   if (detail.loading && !detail.project) {
     return (
@@ -82,8 +141,6 @@ export default function ProjectDetailPage({
         onPlanWithClaude={() => setPlanOpen(true)}
       />
 
-      <ProjectStatusStrip projectId={project.id} />
-
       <div className="border-b border-subtle">
         <div className="flex gap-6">
           {TABS.map((t) => {
@@ -110,7 +167,16 @@ export default function ProjectDetailPage({
       </div>
 
       <div className="mt-5">
-        {tab === "sessions" ? (
+        {tab === "overview" ? (
+          <OverviewTab
+            key={`o-${planNonce}`}
+            project={project}
+            update={detail.update}
+            onPlanWithClaude={() => setPlanOpen(true)}
+            onAddTask={() => setAddTaskOpen(true)}
+            onSwitchTab={(next) => setTab(next)}
+          />
+        ) : tab === "sessions" ? (
           <SessionsTab
             projectId={project.id}
             project={{
@@ -149,11 +215,20 @@ export default function ProjectDetailPage({
         projectName={project.name}
         onClose={() => setPlanOpen(false)}
         onApplied={() => {
-          // Bump the nonce to remount Milestones + Backlog tabs so their
-          // hooks re-fetch. Also surface the milestones tab so the user sees
-          // what just got created.
           setPlanNonce((n) => n + 1);
           setTab("milestones");
+        }}
+      />
+
+      <AddTaskModal
+        open={addTaskOpen}
+        projects={projectsForModal}
+        employees={employees}
+        defaultProjectId={project.id}
+        onClose={() => setAddTaskOpen(false)}
+        onCreated={() => {
+          setAddTaskOpen(false);
+          setPlanNonce((n) => n + 1);
         }}
       />
 
