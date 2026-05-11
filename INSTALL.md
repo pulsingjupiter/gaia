@@ -1,14 +1,14 @@
 # Installing Gaia
 
-A clean, end-to-end install guide for Gaia — Adrian's local AI workforce
+A clean, end-to-end install guide for Gaia — your local AI workforce
 dashboard. Written for two audiences at once:
 
 - **You, the human.** Read top-to-bottom. Should take ~10 minutes if Node
   and Claude Code are already installed; ~20 minutes if you're starting
   fresh.
 - **Claude Code on your Mac.** Skip to **Quick install** for the
-  copy-pasteable flow. Adrian's partner can hand this whole file to you
-  with the prompt at the end.
+  copy-pasteable flow. Anyone you're sharing this with can hand this
+  file to their Claude Code on their Mac with the prompt at the end.
 
 ---
 
@@ -260,7 +260,7 @@ This zip is a clean source tree — no caches, no personal data:
   will create them on first run.
 - **No `node_modules`.** `setup.sh` (or `npm install`) creates them.
 - **No git history.** This is a snapshot, not a clone.
-- **No Adrian's session transcripts, inboxes, or personal notes.**
+- **No personal session transcripts, inboxes, or runtime data.**
   Agent inboxes are reset to empty `[]`.
 - **No `.env` / secrets.** Gaia doesn't need any — your Claude Pro / Max
   subscription auth is handled by the Claude Code CLI itself.
@@ -269,8 +269,9 @@ This zip is a clean source tree — no caches, no personal data:
 
 ## 11. Paste-ready prompt for Claude Code
 
-If your partner ran Claude Code in the unzipped folder and wants Claude
-to do the install, copy the block below into a fresh Claude Code session:
+If you have Claude Code running in the unzipped folder and want Claude
+to do the install for you, copy the block below into a fresh Claude
+Code session:
 
 ```text
 Read INSTALL.md in this directory and install Gaia for me on this Mac.

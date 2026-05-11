@@ -19,7 +19,7 @@ A two-part Markdown response:
    - `**To:** <recipient>`
    - `**Subject:** <subject>`
    - blank line
-   - the email body (≤ 6 short sentences in Adrian's voice — direct, friendly, no corporate fluff)
+   - the email body (≤ 6 short sentences in the user's voice — direct, friendly, no corporate fluff)
 
 2. **Approval block** at the very end of the response (mandatory — this skill always emits exactly one):
 
@@ -42,7 +42,7 @@ The `body:` content under `body: |` MUST be indented (2 spaces) so the parser ca
 - Never invent contact info beyond what the user gave (if no email address is provided, use the name as-is — `mom@example.com` or just `Mom`).
 - No subject line gimmicks (no `[URGENT]`, no clickbait). Plain English.
 - Body ≤ 120 words unless the user explicitly asks for longer.
-- Sign off the way Adrian does: first name only, no formal closer, no auto-signature block.
+- Sign off the way the user does: first name only, no formal closer, no auto-signature block.
 
 ## Example output shape
 
@@ -54,7 +54,7 @@ The `body:` content under `body: |` MUST be indented (2 spaces) so the parser ca
 
 Hey Mom — just confirming 12pm at the usual spot tomorrow. Let me know if anything changes.
 
-— Adrian
+— [your name]
 
 <<<APPROVAL>>>
 action_type: send_email
@@ -65,7 +65,7 @@ body: |
 
   Hey Mom — just confirming 12pm at the usual spot tomorrow. Let me know if anything changes.
 
-  — Adrian
+  — [your name]
 <<<END_APPROVAL>>>
 ```
 

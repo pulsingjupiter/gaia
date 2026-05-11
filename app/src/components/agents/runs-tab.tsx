@@ -1,7 +1,7 @@
 "use client";
 /**
  * Recent Runs tab — table of the last 20 runs for this agent. Click a row
- * to open the LiveRunDrawer. Mirrors the columns Adrian already sees on
+ * to open the LiveRunDrawer. Mirrors the columns the user already sees on
  * the Activity feed.
  */
 import { useState } from "react";

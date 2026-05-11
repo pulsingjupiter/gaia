@@ -722,7 +722,7 @@ function Step4Team({
           checked={includeHuman}
           onClick={onToggleHuman}
           accent="#5B5BD6"
-          name="You (Adrian)"
+          name="You"
           role="Human"
         />
         {agents.length === 0 ? (
@@ -1214,7 +1214,7 @@ function TaskCard({
   }
 
   const ownerLabel = isHuman
-    ? "Adrian"
+    ? "You"
     : agent
       ? agent.name
       : task.assignee_id ?? "Unassigned";
@@ -1245,7 +1245,7 @@ function TaskCard({
               className="rounded border border-strong bg-white px-1.5 py-0.5 text-[10px] text-primary"
             >
               <option value="">Unassigned</option>
-              {includeHuman ? <option value="adrian">Adrian (you)</option> : null}
+              {includeHuman ? <option value="adrian">You</option> : null}
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}

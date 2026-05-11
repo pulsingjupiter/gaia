@@ -46,7 +46,7 @@ export function ProfileTab({
   const editable = !isSystem && !!persona && !persona.missing;
 
   // Autosize the textarea to fit its content (within a sensible cap) so
-  // Adrian doesn't have to hunt for an internal scrollbar while editing.
+  // the user doesn't have to hunt for an internal scrollbar while editing.
   useEffect(() => {
     if (!editing) return;
     const el = textareaRef.current;

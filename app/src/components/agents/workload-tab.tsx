@@ -6,7 +6,7 @@
  *   1. NOW                — running runs (or last activity)
  *   2. SCHEDULED          — enabled cron tasks owned by this agent
  *   3. BACKLOG            — backlog tasks assigned here
- *   4. PENDING APPROVALS  — approvals awaiting Adrian's decision
+ *   4. PENDING APPROVALS  — approvals awaiting the user's decision
  *   5. CONVERSATIONS      — user↔agent threads active in the last 7 days
  *
  * All cards share the same shell — uppercase title + count chip + body — and

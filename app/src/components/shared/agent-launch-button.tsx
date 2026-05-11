@@ -3,7 +3,7 @@
  * AgentLaunchButton — split-button to launch / continue a Claude Code session
  * from an agent's directory (`agents/<slug>/`). Each agent dir already has
  * its own `CLAUDE.md` + `.claude/skills/`, so running `claude` there auto-
- * loads the persona — that's the most natural workflow Adrian uses.
+ * loads the persona — that's the most natural workflow for the user.
  *
  * Mirrors `<ResumeSessionButton>` but is keyed by employee/agent rather than
  * session. Talks to the agent-keyed `POST /api/agents/[id]/launch` endpoint.

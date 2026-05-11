@@ -9,8 +9,8 @@
  *     → { ok: true, file: FileEntry } | { error }
  *     Writes the upload into agents/_shared/files/. Same path-traversal /
  *     name-safety rules as the [name] route, plus a 25MB cap. Refuses to
- *     overwrite an existing file (returns 409) so Adrian doesn't lose work
- *     to a careless drop.
+ *     overwrite an existing file (returns 409) so the user doesn't lose
+ *     work to a careless drop.
  *
  * Wave 1 — feeds the Files page in Wave 2.
  */

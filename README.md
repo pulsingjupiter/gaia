@@ -1,175 +1,151 @@
 # Gaia
 
-Gaia is a calm cockpit for an AI workforce that runs on your Mac. Five
-specialized agents — backed by the Claude Code CLI — handle research,
-writing, planning, project work, and ops. You chat with them, give them
-projects, schedule recurring tasks, and watch their activity from a single
-dashboard. Everything lives locally: a SQLite database, a few hundred
-megabytes of agent state, and the standard Claude Code subscription you
-already pay for. No extra accounts, no cloud, no per-token billing.
+> A local-first macOS dashboard for orchestrating Claude Code sessions
+> across named agent personas.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![macOS Sequoia+](https://img.shields.io/badge/macOS-Sequoia%2B-blue)](https://www.apple.com/macos/)
+[![Built with Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
+
+Gaia turns a Claude Code subscription into a tiny in-house team you
+chat with, schedule, and supervise from one screen. Each agent is a
+folder on disk — a `CLAUDE.md` persona plus a stack of `.claude/skills/`
+markdown files — and Gaia is the cockpit that runs them, watches them,
+and stitches their work into projects, playbooks, and recurring tasks.
+It runs entirely on your Mac. No accounts, no cloud, no per-token
+billing beyond the Claude Pro/Max subscription you already pay for.
+
+## Screenshots
+
+See [`docs/screenshots/`](docs/screenshots/) for the full set.
+
+- `docs/screenshots/overview.png` — Overview dashboard with workforce
+  status and recent activity
+- `docs/screenshots/agents.png` — Agents list with inline launch
+  controls per persona
+- `docs/screenshots/projects.png` — Projects board with milestones,
+  kanban, and Plan-with-Claude wizard
+- `docs/screenshots/schedule.png` — Cron schedule view
+- `docs/screenshots/playbooks.png` — Playbook templates library
+- `docs/screenshots/tasks.png` — Tasks view across the workforce
+
+## What you get
+
+- **10 agent personas** out of the box — Chief of Staff, Researcher,
+  Engineer, Editor, Customer Success, Sales/BD, Designer, Data Analyst,
+  Project Manager, Scriptwriter. Each ships with a starter `CLAUDE.md`
+  persona and one default skill.
+- **5 team bundles** — Content, Engineering, Research, Sales/BD, Exec
+  Support. Pick a bundle on first run and Gaia scaffolds the right
+  agents together.
+- **15 playbook templates** spanning Productivity, Engineering,
+  Research, Content, Sales, Customer Success, and Data.
+- **Projects** with milestones, deadlines, a kanban board, recurring
+  tasks, and a calendar view.
+- **Scheduled runs** — cron jobs that fire skills automatically (daily
+  inbox triage, weekly status digests, end-of-day journaling).
+- **Plan-with-Claude wizard** — headlessly invokes Claude Code to turn
+  a one-line goal into a structured project plan you can edit and
+  apply.
+- **Thermal monitoring widget** for Apple Silicon, powered by
+  [`macmon`](https://github.com/vladkens/macmon).
+- **Native macOS integration** — `osascript`-driven Terminal launches,
+  native folder pickers, no Electron, no web wrapper.
+
+## Philosophy
+
+**Personas are folders.** An agent is just `agents/<slug>/CLAUDE.md`
+plus a skills directory. Edit it in any text editor. Version it.
+Diff it. The dashboard is a view onto the filesystem, not a database
+of black-box bots.
+
+**Skills are markdown.** A skill is a prompt with metadata. No DSL, no
+graph, no chains. If you can write a prompt, you can write a skill.
+
+**Local-first, always.** Everything lives in `app/data/gaia.db` (a
+single SQLite file) and the `agents/` directory. Copy two paths and
+you have a full backup. No sync service. No telemetry.
+
+**macOS-native.** Terminal.app and iTerm2 are first-class. The folder
+picker is the system picker. The thermal widget reads the same sensors
+Activity Monitor reads.
+
+**Human-in-the-loop.** Destructive actions queue for approval. You
+decide what runs, what gets written, and what gets sent.
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel)
-- **Node.js 20 or newer** — `node --version` should print `v20.x.x` or higher
-- **Claude Code CLI** — install with `npm install -g @anthropic-ai/claude-code`
-  - Requires a Claude Pro or Max subscription
-  - Sign in once: run `claude` and follow the browser prompt
+- **macOS 14+** (Sequoia recommended)
+- **Node 20+** — `node --version` must print `v20.x.x` or newer
+- **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`,
+  then `claude login` once. Requires Claude Pro or Max.
 - ~500 MB free disk space (mostly `node_modules`)
 - A free TCP port — Gaia uses **7878** by default
+- **Optional:** [`macmon`](https://github.com/vladkens/macmon)
+  (`brew install macmon && macmon serve --install`) for the thermal
+  monitoring widget on Apple Silicon
 
-## Setup
+## Install
 
-From the project root:
-
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-The script is idempotent — safe to re-run. It:
-
-1. Verifies Node 20+ and the Claude Code CLI
-2. Runs `npm install` inside `app/`
-3. Scaffolds the five agent home directories under `agents/` if any are
-   missing
-4. Creates the SQLite data directory at `app/data/`
-
-When it finishes:
+The full guide lives in [INSTALL.md](./INSTALL.md). The three-line
+version:
 
 ```bash
-cd app && npm run dev
+gh repo clone adrianlee2026-glitch/gaia
+cd gaia && ./setup.sh
+cd app && npm run dev    # → http://localhost:7878
 ```
 
-Then open **<http://localhost:7878>**.
+`setup.sh` is idempotent. It checks your Node version, verifies the
+Claude CLI is installed, runs `npm install`, scaffolds any missing
+agent home directories, and creates the SQLite data directory.
 
-### Test instance — blank-slate onboarding
+## What it ISN'T
 
-Need to experience first-run onboarding without disturbing your real
-workforce? Start a parallel "test" instance from the same `app/`
-directory:
+Setting expectations up front saves everyone time:
 
-```bash
-npm run dev:test     # port 9898, blank DB, empty agents dir
-```
-
-`npm run dev` and `npm run dev:test` are independent: each has its own
-SQLite at `data-test/gaia.db`, its own `agents-test/<slug>/` folders,
-and its own cron scheduler. The test instance skips the default-agent
-seed so the Agents page lands you on "Add your first agent" — exactly
-what a brand-new user sees. Both instances can run side by side.
-
-## First open
-
-You'll land on the Overview page. The sidebar lists Playbooks, Agents,
-Sprint, Projects, Docs, Schedule, Inbox, Activity, Files, and Settings.
-
-If anything is missing on your machine — Claude CLI not installed, an
-agent directory absent, the data dir not writable — a small amber banner
-appears at the top with a one-line remedy for each issue. Hit **Re-check**
-after fixing things, or dismiss the banner once everything is green.
-
-## The five agents
-
-| Slug | Role |
-|------|------|
-| `king-henry` | Decides, prioritizes, and unblocks. The chief-of-staff. |
-| `professor-adrian` | Research and conceptual briefs. Plans before doing. |
-| `atlas` | Long-range planning, project decomposition, milestones. |
-| `nova` | Drafts copy, comms, customer replies, marketing material. |
-| `rack` | Operational tasks — files, schedules, the boring useful stuff. |
-
-Each agent has a home directory at `agents/<slug>/` containing a
-`CLAUDE.md` persona and a `.claude/skills/` folder with skill definitions.
-Edit the persona to change voice; add a skill to give the agent a new
-capability.
-
-## Daily usage
-
-- **Chat with an agent** — open Conversations (Inbox) and pick a thread,
-  or start a new one with the `+` button.
-- **Run a skill** — visit the agent's profile and click **Run now** on a
-  skill, or kick off the same skill via Schedule for a recurring run.
-- **Resume an external session** — if you have an existing Claude Code
-  session in a project directory, Gaia can resume it from the Sessions
-  panel.
-- **Approvals** — destructive actions (file writes, external calls) wait
-  in the Approvals queue. The sidebar Inbox badge counts pending items.
-
-## Configuration
-
-Settings is split into four sub-pages:
-
-- **Profile** — your name, email, timezone, greeting style
-- **Agents** — per-agent model override and optional cost cap
-- **Appearance** — light / dark / system, plus your terminal preference
-  (Terminal, iTerm2, or copy-to-clipboard)
-- **Hooks** — point Gaia at custom shell hooks that fire on lifecycle
-  events (run start/end, approval needed)
-
-## Scheduled tasks
-
-The Schedule page lists cron-style tasks. Each task pairs an agent with a
-skill and a cron expression. Use it for daily inbox triage, weekly status
-digests, end-of-day journaling — anything you'd otherwise forget to
-trigger by hand. Tasks run in-process via `node-cron`; deleting a task
-removes the next firing immediately.
-
-## Backing up your data
-
-Everything Gaia knows lives in **`app/data/gaia.db`**. Copy that single
-file (along with its `-shm` / `-wal` siblings if present) and you have a
-full backup: chats, runs, settings, projects, scheduled tasks. Restore by
-dropping the file back into `app/data/`.
-
-To start fresh, quit the dev server and delete `gaia.db`. It will be
-recreated on the next request.
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `claude: command not found` | `npm install -g @anthropic-ai/claude-code`, then re-run `./setup.sh` |
-| Port 7878 already in use | `kill $(lsof -ti :7878)` then `npm run dev` again |
-| First-run banner says agent dir missing | `./setup.sh` (it re-scaffolds anything absent) |
-| DB looks corrupted / weird errors on startup | Stop the server, delete `app/data/gaia.db*`, restart. You lose chat history but everything else regenerates. |
-| Setup script aborts on Node check | Install Node 20+ via [nodejs.org](https://nodejs.org/) or `nvm install 20` |
-| Agent runs hang | Check the Activity page; cancel from the run detail view |
-
-## Project layout
-
-```
-Agent Site/
-├── setup.sh                ← onboarding script
-├── README.md               ← you are here
-├── agents/                 ← per-agent CLAUDE.md, skills, inbox
-│   ├── king-henry/
-│   ├── professor-adrian/
-│   ├── atlas/
-│   ├── nova/
-│   ├── rack/
-│   ├── _system/            ← system-generated messages
-│   └── _shared/files/      ← drop files here for any agent
-└── app/                    ← Next.js app (the dashboard)
-    ├── src/
-    │   ├── app/            ← routes (App Router) + API
-    │   ├── components/     ← UI
-    │   ├── lib/            ← hooks, utilities
-    │   └── server/         ← DB layer + agent runner
-    ├── scripts/            ← scaffold-agents.ts, smoke-test.ts
-    ├── data/               ← gaia.db (gitignored)
-    └── package.json
-```
+- **Not a framework for building agents from scratch.** If you want to
+  define agent graphs, tools, and message routing yourself, look at
+  LangGraph, AutoGen, or CrewAI.
+- **Not an autonomous coding agent.** Gaia spawns Claude Code sessions
+  in Terminal windows you watch and approve. If you want a heads-down
+  coding loop, look at OpenHands or Cursor.
+- **Not multi-user or cloud-hosted.** One user, one machine. If you
+  need shared state across a team, pick a hosted product.
+- **Not Windows or Linux.** It uses `osascript` to drive Terminal.app
+  and the native macOS folder picker. A non-trivial chunk of the code
+  would need to be rewritten to port.
 
 ## Tech stack
 
-- **Next.js 16** (App Router, Node runtime for API routes)
+- **Next.js 16** with Turbopack (App Router, Node runtime)
 - **React 19** + **Tailwind CSS v4**
-- **better-sqlite3** for the local store
+- **better-sqlite3** for the local store (single file, no daemon)
 - **node-cron** for scheduled tasks
-- **chokidar** for file watching
+- **chokidar** for filesystem watching
 - **Claude Code CLI** as the agent runtime
+- **macOS `osascript`** for Terminal.app / iTerm2 integration
+
+## Status
+
+Solo, MIT-licensed side project. No support contract, no SLA, no
+roadmap promises. Built because the maintainer wanted a calm cockpit
+for the agents already running on his laptop and didn't see one. If
+that resonates, contributions are welcome — see
+[CONTRIBUTING.md](./CONTRIBUTING.md). If you want guarantees, fork
+it.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the quickstart, coding
+conventions, and scope statement.
+
+## Security
+
+See [SECURITY.md](./SECURITY.md). The short version: **Gaia has no
+authentication. Do not expose it to the public internet.** It is
+intended for local-only personal use.
 
 ## License
 
-MIT — do whatever you want with it.
+MIT — see [LICENSE](./LICENSE). Do whatever you want with it.

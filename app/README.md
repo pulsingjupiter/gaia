@@ -1,51 +1,131 @@
-# Gaia / AI Workforce Platform — Prototype
+# Gaia — `app/`
 
-A clickable Next.js UI prototype. Fidelity-focused mock — no backend, mock data only.
+This directory contains the **Next.js 16 application** that powers
+Gaia's web dashboard. It is the only runtime component — everything
+Gaia knows lives in a single SQLite file under `app/data/`.
 
-## Run
+If you landed here first, start with the repo-root `README.md` for the
+user-facing pitch, then `INSTALL.md` for the one-time setup. This file
+is the contributor entry point.
+
+---
+
+## Quick start
 
 ```bash
-cd "/Users/adrian/Library/Mobile Documents/com~apple~CloudDocs/AI/Agent Site/app"
 npm install
 npm run dev
+# → http://localhost:7878
 ```
 
-Open [http://localhost:7878](http://localhost:7878).
+Assumes prereqs from the root `setup.sh` are satisfied (Node 20+, npm
+10+, Claude Code CLI, macOS 12+).
 
-## Stack
+---
 
-- Next.js 16 (App Router) + TypeScript
-- Tailwind CSS v4 (CSS-vars based theme tokens)
-- lucide-react icons
-- @dnd-kit/core for kanban drag-drop
-- Plus Jakarta Sans via `next/font`
-- shadcn/ui was *not* installed — we hand-rolled a small set of UI primitives because Tailwind v4 + Next 16 + shadcn defaults are still flaky (the spec-aligned look is fully reproducible without it).
+## Architecture
 
-## Pages
+- **Next.js 16** App Router with **Turbopack**, **React 19**, **TypeScript** strict.
+- **Tailwind v4** with CSS-vars-based theme tokens (`src/app/globals.css`).
+- **Server-side SQLite** via `better-sqlite3`. Single DB file at
+  `app/data/gaia.db`. Auto-created on first request via the boot-time
+  migration in `src/server/db.ts` (idempotent).
+- **In-process cron scheduler** via `node-cron` (`src/server/cron.ts`) —
+  scheduled tasks run inside the Next.js process.
+- **Terminal driver** — agent launches shell out to Terminal.app or
+  iTerm2 via `osascript` (`src/server/osascript.ts`). macOS only.
 
-| Route | What |
-|------|------|
-| `/` | Overview — KPI strip, tasks grid, workforce CRUD panel, schedule strip, activity / conversations / quick actions rail |
-| `/playbooks` | 12-card playbook grid + filter bar + category tabs + pagination |
-| `/playbooks/[slug]` | Agent detail (radial capability map + about / skills / tools / activity rail). Every card on the list routes here. |
-| `/sprint` | KPI strip + Board / Timeline / Calendar tabs + 4-column @dnd-kit kanban |
-| `/schedule` | Week grid (7 days × 13 hour rows) with all-day band + right rail (overview / upcoming / calendar sync) |
-| `/conversations` | Conv-list + Slack-style chat (incl. progress and result embedded cards) + context rail |
-| `/backlog`, `/docs`, `/activity`, `/files`, `/settings` | Stubs with shared "Coming soon" empty state |
+---
 
-## What's mocked
+## Directory layout
 
-- Employees seeded from `src/lib/mock/employees.ts` and persisted to `localStorage` under key `gaia.employees.v1` via `useLocalStorageState`. The Workforce panel on Overview offers Add / Edit / Remove. Sidebar avatar cluster, conversations list, schedule, activity feed all read from the same context.
-- Playbooks, sprint tasks, schedule events, conversations, activity entries — all static mock data in `src/lib/mock/*`.
+| Path | Purpose |
+|------|---------|
+| `src/app/` | Next.js App Router pages and `/api` route handlers |
+| `src/components/` | UI components grouped by feature (agents, sprint, projects, …) |
+| `src/server/` | Server-only modules (DB, cron, agent runner, scaffolding, osascript) |
+| `src/lib/` | Shared client-safe code — types, helpers, constants, templates |
+| `src/lib/hooks/` | `use-*` React hooks that wrap the `/api` endpoints |
+| `public/` | Static assets (favicon, avatar SVGs) |
+| `data/` | SQLite database lives here at runtime; gitignored |
+| `scripts/` | One-off maintenance scripts |
 
-## What's stubbed
+---
 
-- `/backlog`, `/docs`, `/activity`, `/files`, `/settings` are deliberate placeholders.
-- Search inputs, filter dropdowns, and tab states are non-functional except where it matters (kanban DnD, employee CRUD, conversation selection, category tabs visual state).
-- Send / Star / Share / "+ New X" buttons are visual-only.
+## Key conventions
 
-## Notable design decisions
+- **TypeScript strict**; no `any` — fix the type, don't silence it.
+- API routes use `export const runtime = "nodejs"` and
+  `export const dynamic = "force-dynamic"` so they always run on Node
+  (needed for `better-sqlite3` + `osascript`) and never cache.
+- All path manipulation for agent dirs goes through
+  `src/server/agent-scaffold.ts`; all Terminal / Finder driving goes
+  through `src/server/osascript.ts`. Don't shell out ad-hoc — these are
+  the path-safe wrappers.
+- DB access is server-only — never import `src/server/db.ts` from a
+  client component.
 
-- Per-agent accent colours are stored on the employee record and propagate to every avatar on every page.
-- The radial capability map is hand-drawn SVG (10 nodes at 36° spacing, cubic Bézier connectors) — no chart library.
-- Tailwind v4 `@theme inline` block exposes the design tokens as CSS vars so the same palette drives both inline styles and Tailwind utilities.
+---
+
+## Available scripts
+
+| Script | What it does |
+|--------|--------------|
+| `npm run dev` | Start the prod dashboard on port `7878` against `app/data/` and `agents/` |
+| `npm run dev:test` | Parallel test instance on port `9898` against `app/data-test/` and `agents-test/` — runs side by side with prod |
+| `npm run dev:test:fresh` | Same as `dev:test` but wipes `data-test/` first (`GAIA_FRESH=1`) |
+| `npm run build` | Production build via Turbopack |
+| `npm run start` | Run the production build on port `7878` |
+| `npm run start:test` | Run production build on port `9898` with the test env |
+| `npm run start:test:fresh` | Production test start with a wiped DB |
+
+---
+
+## Database
+
+SQLite, single file. Boot-time migration in `src/server/db.ts` is
+idempotent — first request creates the DB, applies the schema, and (in
+prod mode) seeds sample agents. Back up `app/data/gaia.db` and you've
+backed up the whole system.
+
+To reset:
+
+```bash
+rm app/data/gaia.db*   # stop dev server first
+```
+
+---
+
+## Environment variables
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `GAIA_DATA_DIR` | `./data` | Where the SQLite DB lives |
+| `GAIA_AGENTS_DIR` | `../agents` (resolved from `app/`) | Root of agent persona folders |
+| `GAIA_DIST_DIR` | `.next` | Next.js build output dir — used to isolate prod vs test |
+| `GAIA_SKIP_SEED` | unset | If set, skip the boot-time sample seed |
+| `GAIA_TEST_MODE` | unset | Marks the instance as test (affects banner, seeding) |
+| `GAIA_FRESH` | unset | If set, wipe `GAIA_DATA_DIR` before boot |
+| `GAIA_CLAUDE_BIN` | `claude` | Override the Claude Code CLI path used by launches |
+| `GAIA_MACMON_PORT` | unset | Optional macmon companion process port for thermal/cost telemetry |
+
+---
+
+## Testing / typecheck
+
+There is no test suite yet. The current minimum bar before opening a PR:
+
+```bash
+npx tsc --noEmit
+```
+
+Must pass clean. Add tests when you touch code that warrants them — no
+blanket coverage requirement.
+
+---
+
+## See also
+
+- `../README.md` — user-facing project overview
+- `../INSTALL.md` — end-to-end install guide
+- `../CONTRIBUTING.md` — contribution workflow

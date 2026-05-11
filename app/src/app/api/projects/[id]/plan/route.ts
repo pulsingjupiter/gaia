@@ -122,7 +122,7 @@ function composePrompt(a: PromptArgs): string {
     teamLines.push(`- ${e.id}: ${e.name} (${e.role})`);
   }
   if (a.includeHuman) {
-    teamLines.push(`- adrian: Adrian (you, the human)`);
+    teamLines.push(`- adrian: You (the human)`);
   }
   const teamBlock = teamLines.length > 0 ? teamLines.join("\n") : "(no team specified)";
 

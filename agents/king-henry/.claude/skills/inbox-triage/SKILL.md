@@ -11,7 +11,7 @@ A single Markdown reply containing:
 
 1. **One-line summary** of the batch (e.g. "12 messages — 2 urgent, 4 important, 3 FYI, 3 spam").
 2. **A digest table** with columns: Sender · Topic · Class · Suggested action. Class is one of *urgent*, *important*, *spam*, *FYI*.
-3. **Drafted replies** for every *urgent* and *important* message, each ≤ 3 sentences, in Adrian's voice. Mark any draft that needs a decision with `[DECISION: ...]`.
+3. **Drafted replies** for every *urgent* and *important* message, each ≤ 3 sentences, in the user's voice. Mark any draft that needs a decision with `[DECISION: ...]`.
 4. **Bottom-line "do this next"** — a short imperative list of the 1–3 actions that matter today.
 
 ## Constraints
