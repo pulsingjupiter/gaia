@@ -1,0 +1,64 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Node
+node_modules/
+**/node_modules/
+
+# Next.js
+app/.next/
+app/.next-test/
+app/out/
+app/next-env.d.ts
+app/tsconfig.tsbuildinfo
+
+# Local env files
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# SQLite database — user-local, never commit
+app/data/gaia.db
+app/data/gaia.db-shm
+app/data/gaia.db-wal
+app/data/*.db
+app/data/*.db-*
+
+# Per-agent inboxes are user-local state
+agents/*/inbox.json
+
+# Shared agent files area is user-local
+agents/_shared/files/*
+!agents/_shared/files/.gitkeep
+
+# Test instance — blank-slate Gaia on port 9898 (npm run dev:test).
+# DB + agent state are user-local fixtures, never commit. Keep the
+# `agents-test/` dir tracked via .gitkeep so the dir exists fresh on clone.
+data-test/
+agents-test/*
+!agents-test/.gitkeep
+
+# OS / scratch
+.tmp/
+.cache/
+
+# Archived inner git repo (preserved locally, not for remote)
+app/.git.archive-*
+
+# Stray local artifacts
+from others/
+henry-avatar.jpg
+*.bak.before-*
