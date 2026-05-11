@@ -55,6 +55,10 @@ agents-test/*
 .tmp/
 .cache/
 
+# Runtime lock files (per-instance PIDs)
+.claude/scheduled_tasks.lock
+**/scheduled_tasks.lock
+
 # Archived inner git repo (preserved locally, not for remote)
 app/.git.archive-*
 
