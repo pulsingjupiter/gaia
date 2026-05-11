@@ -31,6 +31,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (sp.get("include_archived") === "1") filters.include_archived = true;
   const search = sp.get("search");
   if (search) filters.search = search;
+  // Hide auto-discovered agent / temp dirs from the user-facing list by
+  // default. Power users can pass ?include_internal=1 to see everything.
+  if (sp.get("include_internal") !== "1") {
+    filters.is_internal = false;
+  }
   const projects = listProjects(filters);
   return Response.json({ projects });
 }

@@ -386,9 +386,73 @@ function deltaFromLine(line: string): LineSnapshotDelta | null {
 // Project / session bookkeeping
 // ---------------------------------------------------------------------------
 
+/**
+ * True if `cwd` represents an internal/agent directory or a temp path that
+ * should never appear in the user-facing Projects list. Compares normalised
+ * absolute paths so `..` / symlinks / trailing slashes don't slip through.
+ *
+ * Rules:
+ *   - At or under `PATHS.agentsDir` (real `agents/<slug>`).
+ *   - At or under the project root's `agents-test/` dir (test instance).
+ *   - `/tmp` or under it.
+ *   - `/private/tmp` (macOS) or under it.
+ *   - `/var/folders/.../T/...` macOS per-user temp dirs.
+ *   - The user's home dir itself (e.g. `/Users/<user>`) — never a "project".
+ */
 function isInternalCwd(cwd: string): boolean {
-  const internal = path.join(PATHS.agentsDir);
-  return cwd === internal || cwd.startsWith(internal + path.sep);
+  if (!cwd || typeof cwd !== "string") return false;
+  let abs: string;
+  try {
+    abs = path.resolve(cwd);
+  } catch {
+    return false;
+  }
+
+  // Home dir itself is not a project. Subdirs of home are fine (most projects
+  // live there) so we only block the exact home dir.
+  try {
+    if (abs === path.resolve(os.homedir())) return true;
+  } catch {
+    // ignore
+  }
+
+  // Helper: is `abs` equal to or strictly under `root` (both normalised)?
+  const isUnder = (root: string): boolean => {
+    const r = path.resolve(root);
+    if (abs === r) return true;
+    const rel = path.relative(r, abs);
+    return (
+      rel !== "" &&
+      !rel.startsWith("..") &&
+      !path.isAbsolute(rel)
+    );
+  };
+
+  // Real agents dir.
+  if (isUnder(PATHS.agentsDir)) return true;
+
+  // Test-instance agents dir (sibling to agents/). We check it whether or not
+  // GAIA_AGENTS_DIR was set, so the real-instance DB still flags any rows
+  // pointing into agents-test/.
+  if (isUnder(path.join(PATHS.projectRoot, "agents-test"))) return true;
+
+  // Any path that has `/agents/` or `/agents-test/` as a directory segment.
+  // Catches alternate checkouts of this project (e.g. an iCloud-synced copy
+  // whose `agents/<slug>` dirs don't live under PATHS.projectRoot).
+  // Uses path.sep-agnostic split so it works regardless of OS.
+  const segments = abs.split(path.sep).filter(Boolean);
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i] === "agents" || segments[i] === "agents-test") {
+      return true;
+    }
+  }
+
+  // Temp dirs.
+  if (isUnder("/tmp")) return true;
+  if (isUnder("/private/tmp")) return true;
+  if (isUnder("/var/folders")) return true;
+
+  return false;
 }
 
 /** Lossy fallback for when we can't read a `cwd` field. */
@@ -436,19 +500,25 @@ function firstCwdInFile(filePath: string, maxLines = 50): string | null {
 }
 
 function ensureProjectForCwd(cwd: string, transcriptDir: string) {
+  const internal = isInternalCwd(cwd);
   // Prefer transcript_dir lookup (stable across path remaps).
   const byDir = getProjectByTranscriptDir(transcriptDir);
   if (byDir) {
-    if (byDir.path !== cwd) {
-      updateProject(byDir.id, { path: cwd });
-    }
+    const patch: Parameters<typeof updateProject>[1] = {};
+    if (byDir.path !== cwd) patch.path = cwd;
+    // Flip is_internal up if the path now matches internal rules. Never
+    // flip a legit user project DOWN to non-internal here — operators may
+    // have toggled is_internal manually.
+    if (internal && byDir.is_internal !== 1) patch.is_internal = 1;
+    if (Object.keys(patch).length > 0) updateProject(byDir.id, patch);
     return byDir;
   }
   const byPath = getProjectByPath(cwd);
   if (byPath) {
-    if (!byPath.transcript_dir) {
-      updateProject(byPath.id, { transcript_dir: transcriptDir });
-    }
+    const patch: Parameters<typeof updateProject>[1] = {};
+    if (!byPath.transcript_dir) patch.transcript_dir = transcriptDir;
+    if (internal && byPath.is_internal !== 1) patch.is_internal = 1;
+    if (Object.keys(patch).length > 0) updateProject(byPath.id, patch);
     return byPath;
   }
   return upsertProject({
@@ -456,6 +526,7 @@ function ensureProjectForCwd(cwd: string, transcriptDir: string) {
     path: cwd,
     transcript_dir: transcriptDir,
     color: pickColor(cwd),
+    is_internal: internal ? 1 : 0,
   });
 }
 
