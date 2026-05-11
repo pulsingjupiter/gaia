@@ -214,7 +214,25 @@ export type TaskRow = {
   milestone_id: string | null;
   /** Per-task deadline as ms-epoch. Null = no deadline. */
   due_date: number | null;
+  /**
+   * Recurrence frequency. NULL = non-recurring (default). When set, marking
+   * the task `done` spawns the next instance via `spawnNextRecurringInstance`.
+   */
+  recurrence: TaskRecurrence | null;
+  /**
+   * Original due_date ms-epoch — preserves the canonical time-of-day across
+   * spawned instances. Set on the first occurrence; copied onto each spawn.
+   */
+  recurrence_anchor: number | null;
+  /**
+   * Self-FK to the chain's root task. All instances in a recurring chain
+   * share the same `parent_task_id` (= the root's id); the root itself has
+   * `parent_task_id = NULL`.
+   */
+  parent_task_id: string | null;
 };
+
+export type TaskRecurrence = "daily" | "weekdays" | "weekly" | "monthly";
 
 export type MilestoneStatus = "active" | "complete" | "archived";
 
@@ -825,6 +843,76 @@ function initSchema(db: Database.Database): void {
   );
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`,
+  );
+
+  // -------------------------------------------------------------------------
+  // Recurring tasks
+  //
+  // Adds `recurrence`, `recurrence_anchor`, `parent_task_id` to `tasks`.
+  // `recurrence` is one of 'daily'|'weekdays'|'weekly'|'monthly' or NULL
+  // (non-recurring). `recurrence_anchor` holds the original due_date ms-epoch
+  // so the time-of-day stays stable across spawned instances. `parent_task_id`
+  // is a self-FK to the root task in the chain — every spawned instance
+  // shares the same root so the chain doesn't fork.
+  //
+  // Best-effort one-time backup before the ALTER. Skipped under tests; also
+  // skipped if a backup with this prefix already exists for today.
+  // -------------------------------------------------------------------------
+  try {
+    const tasksCols = (
+      db
+        .prepare<unknown[], { name: string }>(`PRAGMA table_info(tasks)`)
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const recurrenceColsMissing =
+      !tasksCols.includes("recurrence") ||
+      !tasksCols.includes("recurrence_anchor") ||
+      !tasksCols.includes("parent_task_id");
+    if (
+      recurrenceColsMissing &&
+      process.env.NODE_ENV !== "test" &&
+      process.env.GAIA_TEST_MODE !== "1"
+    ) {
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const existingBackups = fs
+          .readdirSync(DATA_DIR)
+          .filter((f) => f.startsWith(`gaia.db.bak-pre-recurrence-${today}`));
+        if (existingBackups.length === 0) {
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          const backupPath = path.join(
+            DATA_DIR,
+            `gaia.db.bak-pre-recurrence-${ts}`,
+          );
+          fs.copyFileSync(DB_PATH, backupPath);
+          console.log(`[migrate] wrote backup ${backupPath}`);
+        }
+      } catch (err) {
+        console.warn("[migrate] recurrence backup failed (continuing):", err);
+      }
+    }
+  } catch (err) {
+    console.warn("[migrate] recurrence backup probe failed (continuing):", err);
+  }
+
+  const taskRecurrenceAdds: Array<[string, string]> = [
+    ["recurrence", "TEXT"],
+    ["recurrence_anchor", "INTEGER"],
+    ["parent_task_id", "TEXT"],
+  ];
+  for (const [col, decl] of taskRecurrenceAdds) {
+    try {
+      db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${decl}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column/i.test(msg)) throw err;
+    }
+  }
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tasks_recurrence ON tasks(recurrence)`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)`,
   );
 
   // -------------------------------------------------------------------------
@@ -1725,6 +1813,9 @@ export type InsertTaskInput = {
   project_id?: string | null;
   milestone_id?: string | null;
   due_date?: number | null;
+  recurrence?: TaskRecurrence | null;
+  recurrence_anchor?: number | null;
+  parent_task_id?: string | null;
 };
 
 export function insertTask(input: InsertTaskInput): TaskRow {
@@ -1740,8 +1831,8 @@ export function insertTask(input: InsertTaskInput): TaskRow {
         id, title, employee_id, skill, schedule_cron, human_label,
         enabled, last_run_id, last_run_at,
         priority, status, description, created_at, playbook, project_id,
-        milestone_id, due_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        milestone_id, due_date, recurrence, recurrence_anchor, parent_task_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -1759,6 +1850,9 @@ export function insertTask(input: InsertTaskInput): TaskRow {
       input.project_id ?? null,
       input.milestone_id ?? null,
       input.due_date ?? null,
+      input.recurrence ?? null,
+      input.recurrence_anchor ?? null,
+      input.parent_task_id ?? null,
     );
   return getTask(id)!;
 }
@@ -1779,6 +1873,9 @@ export type UpdateTaskPatch = Partial<{
   project_id: string | null;
   milestone_id: string | null;
   due_date: number | null;
+  recurrence: TaskRecurrence | null;
+  recurrence_anchor: number | null;
+  parent_task_id: string | null;
 }>;
 
 const TASK_PATCH_KEYS = [
@@ -1797,6 +1894,9 @@ const TASK_PATCH_KEYS = [
   "project_id",
   "milestone_id",
   "due_date",
+  "recurrence",
+  "recurrence_anchor",
+  "parent_task_id",
 ] as const;
 
 export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefined {
@@ -1825,6 +1925,97 @@ export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefi
 export function deleteTask(id: string): boolean {
   const info = getDb().prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
   return info.changes > 0;
+}
+
+export const VALID_RECURRENCES: readonly TaskRecurrence[] = [
+  "daily",
+  "weekdays",
+  "weekly",
+  "monthly",
+] as const;
+
+/**
+ * Compute the next occurrence of a recurring task as ms-epoch. Preserves the
+ * time-of-day of `current_due_date`. `weekdays` skips Sat/Sun (Fri → Mon).
+ * `monthly` clamps to the last day of the next month when the day-of-month
+ * doesn't exist (e.g. Jan 31 → Feb 28 / 29).
+ */
+export function computeNextOccurrence(
+  current_due_date: number,
+  recurrence: TaskRecurrence,
+): number {
+  const d = new Date(current_due_date);
+  if (recurrence === "daily") {
+    d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  if (recurrence === "weekdays") {
+    d.setDate(d.getDate() + 1);
+    // 0=Sun, 6=Sat
+    const dow = d.getDay();
+    if (dow === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+    else if (dow === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+    return d.getTime();
+  }
+  if (recurrence === "weekly") {
+    d.setDate(d.getDate() + 7);
+    return d.getTime();
+  }
+  // monthly — preserve day-of-month, clamp to last day if next month is shorter
+  const desiredDay = d.getDate();
+  const hh = d.getHours();
+  const mm = d.getMinutes();
+  const ss = d.getSeconds();
+  const ms = d.getMilliseconds();
+  const targetMonth = d.getMonth() + 1;
+  const targetYear = d.getFullYear();
+  // Last day of target month: day 0 of (month+1) returns last day of `month`.
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const day = Math.min(desiredDay, lastDay);
+  return new Date(targetYear, targetMonth, day, hh, mm, ss, ms).getTime();
+}
+
+/**
+ * Spawn the next instance of a recurring task. Returns the new row, or null
+ * if the parent isn't recurring or has no anchorable due date.
+ *
+ * The spawned task copies the template fields (title, description, project,
+ * owner, priority, milestone, recurrence, recurrence_anchor) and sets
+ * `parent_task_id` to the chain's root id so every instance shares the same
+ * root. Status is reset to `todo`. `due_date` is computed via
+ * `computeNextOccurrence`.
+ */
+export function spawnNextRecurringInstance(
+  parentTaskId: string,
+): TaskRow | null {
+  const parent = getTask(parentTaskId);
+  if (!parent) return null;
+  if (!parent.recurrence) return null;
+  const anchorBase =
+    parent.due_date ?? parent.recurrence_anchor ?? null;
+  if (anchorBase === null) {
+    console.warn(
+      `[recurrence] task ${parentTaskId} has recurrence=${parent.recurrence} but no due_date or recurrence_anchor — skipping spawn`,
+    );
+    return null;
+  }
+  const next = computeNextOccurrence(anchorBase, parent.recurrence);
+  const rootId = parent.parent_task_id ?? parent.id;
+  const id = randomUUID();
+  return insertTask({
+    id,
+    title: parent.title,
+    employee_id: parent.employee_id,
+    project_id: parent.project_id,
+    description: parent.description,
+    priority: parent.priority,
+    milestone_id: parent.milestone_id,
+    status: "todo",
+    due_date: next,
+    recurrence: parent.recurrence,
+    recurrence_anchor: parent.recurrence_anchor ?? parent.due_date ?? next,
+    parent_task_id: rootId,
+  });
 }
 
 // ---------------------------------------------------------------------------

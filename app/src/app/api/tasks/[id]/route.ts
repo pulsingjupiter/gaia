@@ -16,10 +16,14 @@
  *   PATCH { status: 'archived' }.)
  */
 import {
+  VALID_RECURRENCES,
   deleteTask,
   getTask,
+  spawnNextRecurringInstance,
   updateTask,
   type TaskPriority,
+  type TaskRecurrence,
+  type TaskRow,
   type TaskStatus,
   type UpdateTaskPatch,
 } from "@/server/db.ts";
@@ -55,6 +59,8 @@ type PatchBody = {
   description?: unknown;
   milestone_id?: unknown;
   due_date?: unknown;
+  recurrence?: unknown;
+  recurrence_anchor?: unknown;
   /** Reject these — cron fields belong on /api/scheduled-runs/[id]. */
   schedule_cron?: unknown;
   skill?: unknown;
@@ -161,10 +167,48 @@ export async function PATCH(
     if (parsed === "__bad__") return badRequest("due_date must be number|string|null");
     patch.due_date = parsed;
   }
+  if ("recurrence" in body) {
+    if (body.recurrence === null) {
+      patch.recurrence = null;
+    } else if (
+      typeof body.recurrence !== "string" ||
+      !(VALID_RECURRENCES as readonly string[]).includes(body.recurrence)
+    ) {
+      return badRequest(
+        `recurrence must be one of ${VALID_RECURRENCES.join(", ")} or null`,
+      );
+    } else {
+      patch.recurrence = body.recurrence as TaskRecurrence;
+    }
+  }
+  if ("recurrence_anchor" in body) {
+    const parsed = parseDateInput(body.recurrence_anchor);
+    if (parsed === "__bad__")
+      return badRequest("recurrence_anchor must be number|string|null");
+    patch.recurrence_anchor = parsed;
+  }
+
+  // Detect transition to `done` for recurrence spawning. We check BEFORE the
+  // update so the pre-image is unambiguous, then trigger the spawn after the
+  // update so the parent's final state is what gets read.
+  const pre = getTask(id);
+  const willTransitionToDone =
+    patch.status === "done" && pre && pre.status !== "done";
 
   const task = updateTask(id, patch);
   if (!task) return notFound(id);
-  return Response.json({ task });
+
+  let spawned: TaskRow | null = null;
+  if (willTransitionToDone && task.recurrence) {
+    try {
+      spawned = spawnNextRecurringInstance(id);
+    } catch (err) {
+      // Don't fail the PATCH if the spawn itself blows up — log and move on.
+      console.error(`[recurrence] spawn failed for task ${id}:`, err);
+    }
+  }
+
+  return Response.json({ task, spawned });
 }
 
 export async function DELETE(

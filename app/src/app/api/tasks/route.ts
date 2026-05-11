@@ -1,6 +1,7 @@
 /**
  * GET  /api/tasks?employee_id=&project_id=&status=&priority=&search=
  *               &milestone_id=&due=overdue|today|this_week|none
+ *               &include_done=1
  *      → { tasks: TaskRow[] }
  *
  *      Lists work tasks from the `tasks` table. Status defaults to ALL
@@ -11,13 +12,19 @@
  *      `milestone_id=__none__` filters to tasks with no milestone assigned.
  *      `due` accepts overdue|today|this_week|none, where `none` means no
  *      due date set. All three buckets only consider non-done/archived rows.
+ *      `include_done=1` is a no-op pass-through that documents the calendar's
+ *      intent to include `done` rows in the response (the server already
+ *      returns all statuses by default; the kanban filters client-side).
  *
  * POST /api/tasks
  *      body: { title, project_id?, employee_id?, status?, priority?,
- *              description?, milestone_id?, due_date? }
+ *              description?, milestone_id?, due_date?, recurrence?,
+ *              recurrence_anchor? }
  *      → 201 { task }
  *
  *      Direct work-task creator. Defaults: status='todo', priority='medium'.
+ *      `recurrence` must be one of 'daily'|'weekdays'|'weekly'|'monthly' or
+ *      null. When set, `recurrence_anchor` defaults to the provided due_date.
  *      The `schedule_cron` field is REJECTED here — cron rows must go through
  *      /api/scheduled-runs.
  */
@@ -25,11 +32,13 @@ import type { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 
 import {
+  VALID_RECURRENCES,
   getTask,
   insertTask,
   listAllTasks,
   type TaskFilters,
   type TaskPriority,
+  type TaskRecurrence,
   type TaskRow,
   type TaskStatus,
 } from "@/server/db.ts";
@@ -111,6 +120,8 @@ type CreateBody = {
   description?: unknown;
   milestone_id?: unknown;
   due_date?: unknown;
+  recurrence?: unknown;
+  recurrence_anchor?: unknown;
   /**
    * Reject if present — cron rows go through /api/scheduled-runs after the
    * cron-split migration. Kept in the type so the check below can fire a
@@ -196,6 +207,33 @@ export async function POST(request: Request): Promise<Response> {
   const due_date = parseDateInput(body.due_date);
   if (due_date === "__bad__") return badRequest("due_date must be number|string|null");
 
+  let recurrence: TaskRecurrence | null = null;
+  if ("recurrence" in body && body.recurrence !== null && body.recurrence !== undefined) {
+    if (
+      typeof body.recurrence !== "string" ||
+      !(VALID_RECURRENCES as readonly string[]).includes(body.recurrence)
+    ) {
+      return badRequest(
+        `recurrence must be one of ${VALID_RECURRENCES.join(", ")} or null`,
+      );
+    }
+    recurrence = body.recurrence as TaskRecurrence;
+  }
+
+  let recurrence_anchor: number | null = null;
+  if ("recurrence_anchor" in body) {
+    const parsed = parseDateInput(body.recurrence_anchor);
+    if (parsed === "__bad__")
+      return badRequest("recurrence_anchor must be number|string|null");
+    recurrence_anchor = parsed;
+  }
+  // When recurring is set, anchor defaults to the provided due_date so the
+  // time-of-day stays stable across spawns even after the first instance is
+  // edited.
+  if (recurrence && recurrence_anchor === null) {
+    recurrence_anchor = typeof due_date === "number" ? due_date : null;
+  }
+
   const task = insertTask({
     id,
     title: body.title.trim(),
@@ -206,6 +244,8 @@ export async function POST(request: Request): Promise<Response> {
     status,
     milestone_id,
     due_date,
+    recurrence,
+    recurrence_anchor,
   });
   return Response.json({ task }, { status: 201 });
 }

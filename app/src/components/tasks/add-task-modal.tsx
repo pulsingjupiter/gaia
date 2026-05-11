@@ -1,10 +1,12 @@
 "use client";
 /**
- * AddTaskModal — direct work-task creator for the /tasks kanban board.
+ * AddTaskModal — direct work-task creator (and editor) for the /tasks kanban
+ * board.
  *
- * Posts to /api/tasks (the work-task surface — cron rows go through
- * /api/scheduled-runs after the cron-split). Body shape:
- *   { title, project_id?, employee_id?, status?, priority?, description? }
+ * Posts to /api/tasks for creation (or PATCH /api/tasks/[id] when an existing
+ * `task` is supplied). Body shape:
+ *   { title, project_id?, employee_id?, status?, priority?, description?,
+ *     milestone_id?, due_date?, recurrence?, recurrence_anchor? }
  *
  * UX notes:
  *   - Esc + click-outside both close. Body scroll lock while open.
@@ -13,18 +15,24 @@
  *     instead of the project Backlog.
  *   - "(no project)" / "(unassigned)" are first options in their dropdowns,
  *     emitting null on submit.
+ *   - When `task` is supplied the form is pre-populated and the modal swaps
+ *     into edit mode (PATCH instead of POST, title/CTA copy adjusted).
  */
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { Employee } from "@/lib/types";
 import type { ProjectRow } from "@/lib/hooks/use-projects";
 import { useMilestones } from "@/lib/hooks/use-milestones";
+import type { TaskRow } from "@/components/sprint/kanban-board";
 
 const STATUSES = ["todo", "in_progress", "review", "done"] as const;
 type Status = (typeof STATUSES)[number];
 
 const PRIORITIES = ["low", "medium", "high"] as const;
 type Priority = (typeof PRIORITIES)[number];
+
+const RECURRENCES = ["none", "daily", "weekdays", "weekly", "monthly"] as const;
+type Recurrence = (typeof RECURRENCES)[number];
 
 const STATUS_LABELS: Record<Status, string> = {
   todo: "To Do",
@@ -39,30 +47,60 @@ const PRIORITY_LABELS: Record<Priority, string> = {
   high: "High",
 };
 
+const RECURRENCE_LABELS: Record<Recurrence, string> = {
+  none: "Never",
+  daily: "Daily",
+  weekdays: "Weekdays",
+  weekly: "Weekly",
+  monthly: "Monthly",
+};
+
 export type AddTaskModalProps = {
   open: boolean;
   projects: ProjectRow[];
   employees: Employee[];
   /** Optional pre-selected project (e.g. when the board is project-filtered). */
   defaultProjectId?: string | null;
+  /** Optional pre-filled due date (used by Calendar empty-cell click). */
+  defaultDueDate?: string | null;
+  /**
+   * When set, the modal opens in edit mode for this row — PATCH instead of
+   * POST, populated fields, title + CTA copy updated. The form still uses
+   * the same component so behaviour stays in lockstep.
+   */
+  task?: TaskRow | null;
   onClose: () => void;
-  /** Fired after a successful POST so the board can refetch. */
+  /** Fired after a successful POST or PATCH so the board can refetch. */
   onCreated?: () => void;
 };
+
+function msToInputDate(ms: number | null): string {
+  if (ms === null) return "";
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 export function AddTaskModal({
   open,
   projects,
   employees,
   defaultProjectId = null,
+  defaultDueDate = null,
+  task = null,
   onClose,
   onCreated,
 }: AddTaskModalProps) {
+  const editing = Boolean(task);
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState<string>("");
   const [employeeId, setEmployeeId] = useState<string>("");
   const [status, setStatus] = useState<Status>("todo");
   const [priority, setPriority] = useState<Priority>("medium");
+  const [recurrence, setRecurrence] = useState<Recurrence>("none");
   const [description, setDescription] = useState("");
   const [milestoneId, setMilestoneId] = useState<string>("");
   const [dueDate, setDueDate] = useState<string>("");
@@ -71,21 +109,42 @@ export function AddTaskModal({
 
   const { milestones } = useMilestones(projectId || null);
 
-  // Reset state every time the modal opens — seeds projectId from the prop
-  // so a project-filtered board pre-selects that project for the new task.
+  // Reset state every time the modal opens. In edit mode, seed from the task;
+  // otherwise pre-select project (when board is project-filtered) and any
+  // calendar-supplied default due date.
   useEffect(() => {
     if (!open) return;
-    setTitle("");
-    setProjectId(defaultProjectId ?? "");
-    setEmployeeId("");
-    setStatus("todo");
-    setPriority("medium");
-    setDescription("");
-    setMilestoneId("");
-    setDueDate("");
+    if (task) {
+      setTitle(task.title);
+      setProjectId(task.project_id ?? "");
+      setEmployeeId(task.employee_id ?? "");
+      // Only the kanban subset of statuses is editable here. Backlog/archived
+      // tasks fall back to 'todo' so the dropdown stays valid.
+      const kanbanStatus: Status = (
+        STATUSES as readonly string[]
+      ).includes(task.status)
+        ? (task.status as Status)
+        : "todo";
+      setStatus(kanbanStatus);
+      setPriority(task.priority);
+      setRecurrence((task.recurrence ?? "none") as Recurrence);
+      setDescription(task.description ?? "");
+      setMilestoneId(task.milestone_id ?? "");
+      setDueDate(msToInputDate(task.due_date));
+    } else {
+      setTitle("");
+      setProjectId(defaultProjectId ?? "");
+      setEmployeeId("");
+      setStatus("todo");
+      setPriority("medium");
+      setRecurrence("none");
+      setDescription("");
+      setMilestoneId("");
+      setDueDate(defaultDueDate ?? "");
+    }
     setSubmitting(false);
     setError(null);
-  }, [open, defaultProjectId]);
+  }, [open, defaultProjectId, defaultDueDate, task]);
 
   // Clear milestone selection if the project changes (milestones are
   // project-scoped, so the previous id wouldn't apply).
@@ -131,27 +190,72 @@ export function AddTaskModal({
 
     setSubmitting(true);
     try {
-      const body: Record<string, unknown> = {
-        title: title.trim(),
-        status,
-        priority,
-      };
-      if (projectId) body.project_id = projectId;
-      if (employeeId) body.employee_id = employeeId;
-      if (description.trim()) body.description = description.trim();
-      if (milestoneId) body.milestone_id = milestoneId;
-      if (dueDate) body.due_date = dueDate;
+      const dueDateMs =
+        dueDate.trim() !== "" ? new Date(dueDate).getTime() : null;
 
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(data?.error ?? `POST /api/tasks ${res.status}`);
+      if (editing && task) {
+        // Edit mode: PATCH the row. We always send every field so the server
+        // sees the canonical state — fields not edited still resolve to their
+        // current value via the form state we seeded from the task.
+        const patchBody: Record<string, unknown> = {
+          title: title.trim(),
+          status,
+          priority,
+          project_id: projectId || null,
+          employee_id: employeeId || null,
+          description: description.trim() || null,
+          milestone_id: milestoneId || null,
+          due_date: dueDateMs,
+          recurrence: recurrence === "none" ? null : recurrence,
+          // Preserve the original anchor when set; otherwise (e.g. user just
+          // turned recurrence on) fall back to the current due_date.
+          recurrence_anchor:
+            recurrence === "none"
+              ? null
+              : task.recurrence_anchor ?? dueDateMs,
+        };
+        const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patchBody),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(
+            data?.error ?? `PATCH /api/tasks/${task.id} ${res.status}`,
+          );
+        }
+      } else {
+        const body: Record<string, unknown> = {
+          title: title.trim(),
+          status,
+          priority,
+        };
+        if (projectId) body.project_id = projectId;
+        if (employeeId) body.employee_id = employeeId;
+        if (description.trim()) body.description = description.trim();
+        if (milestoneId) body.milestone_id = milestoneId;
+        if (dueDate) body.due_date = dueDate;
+        if (recurrence !== "none") {
+          body.recurrence = recurrence;
+          // Anchor mirrors the chosen due_date — server falls back to null if
+          // due_date wasn't supplied.
+          if (dueDateMs !== null) body.recurrence_anchor = dueDateMs;
+        }
+
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? `POST /api/tasks ${res.status}`);
+        }
       }
       onCreated?.();
       onClose();
@@ -176,10 +280,12 @@ export function AddTaskModal({
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-base font-semibold text-primary">
-              New Task
+              {editing ? "Edit Task" : "New Task"}
             </h2>
             <p className="mt-0.5 text-xs text-muted">
-              Add a work item to the kanban board.
+              {editing
+                ? "Update fields and save changes."
+                : "Add a work item to the kanban board."}
             </p>
           </div>
           <button
@@ -246,6 +352,26 @@ export function AddTaskModal({
                   </option>
                 ))}
               </select>
+            </Field>
+
+            <Field label="Repeats">
+              <select
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value as Recurrence)}
+                className="w-full rounded-lg border border-strong bg-white px-3 py-2 text-xs outline-none focus:border-accent"
+              >
+                {RECURRENCES.map((r) => (
+                  <option key={r} value={r}>
+                    {RECURRENCE_LABELS[r]}
+                  </option>
+                ))}
+              </select>
+              {recurrence !== "none" ? (
+                <p className="mt-1 text-[10px] text-muted">
+                  A new instance will be created automatically when you mark
+                  this done.
+                </p>
+              ) : null}
             </Field>
 
             <Field label="Priority">
@@ -318,7 +444,13 @@ export function AddTaskModal({
               disabled={submitting}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
             >
-              {submitting ? "Adding…" : "Add task"}
+              {submitting
+                ? editing
+                  ? "Saving…"
+                  : "Adding…"
+                : editing
+                  ? "Save changes"
+                  : "Add task"}
             </button>
           </div>
         </form>

@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/shell/page-header";
 import { SprintKpiStrip } from "@/components/sprint/kpi-strip";
 import { KanbanBoard, type KanbanCounts } from "@/components/sprint/kanban-board";
 import { AddTaskModal } from "@/components/tasks/add-task-modal";
+import { TaskCalendar } from "@/components/tasks/task-calendar";
 import { useProjects, type ProjectRow } from "@/lib/hooks/use-projects";
 import { useMilestones } from "@/lib/hooks/use-milestones";
 import { useEmployees } from "@/components/employees/employees-context";
@@ -39,10 +40,12 @@ const DUE_LABEL: Record<DueParam | "any", string> = {
   none: "No due date",
 };
 
-const TABS: { label: string; tooltip?: string }[] = [
-  { label: "Board" },
+type TabView = "board" | "calendar";
+
+const TABS: { label: string; tooltip?: string; view?: TabView }[] = [
+  { label: "Board", view: "board" },
   { label: "Timeline", tooltip: "Coming in V5" },
-  { label: "Calendar", tooltip: "Coming in V5" },
+  { label: "Calendar", view: "calendar" },
 ];
 
 const DEFAULT_PROJECT_COLOR = "#5B5BD6";
@@ -67,6 +70,10 @@ export default function TasksPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<TabView>("board");
+  const [calendarDefaultDate, setCalendarDefaultDate] = useState<string | null>(
+    null,
+  );
 
   // If the URL points at a project that no longer exists (archived or
   // deleted) we silently fall back to "All projects" without rewriting the
@@ -171,21 +178,30 @@ export default function TasksPage() {
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-subtle">
         <div className="flex gap-6">
-          {TABS.map((t, i) => (
-            <button
-              key={t.label}
-              type="button"
-              disabled={i !== 0}
-              title={t.tooltip}
-              className={
-                i === 0
-                  ? "border-b-2 border-accent pb-2 text-sm font-semibold text-accent"
-                  : "cursor-not-allowed pb-2 text-sm text-muted opacity-60"
-              }
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const isActive = t.view === activeTab;
+            const isDisabled = !t.view;
+            return (
+              <button
+                key={t.label}
+                type="button"
+                disabled={isDisabled}
+                title={t.tooltip}
+                onClick={() => {
+                  if (t.view) setActiveTab(t.view);
+                }}
+                className={
+                  isActive
+                    ? "border-b-2 border-accent pb-2 text-sm font-semibold text-accent"
+                    : isDisabled
+                      ? "cursor-not-allowed pb-2 text-sm text-muted opacity-60"
+                      : "pb-2 text-sm text-secondary hover:text-primary"
+                }
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
         <div className="flex flex-wrap items-center gap-2 pb-2">
           <MilestoneFilterMenu
@@ -214,15 +230,29 @@ export default function TasksPage() {
       </div>
 
       <div className="mt-4">
-        <KanbanBoard
-          projectId={selectedProject?.id ?? null}
-          projectName={selectedProject?.name ?? null}
-          milestoneId={milestoneParam}
-          due={dueParam}
-          milestoneNamesById={milestoneNamesById}
-          onCountsChange={setCounts}
-          refreshKey={refreshKey}
-        />
+        {activeTab === "board" ? (
+          <KanbanBoard
+            projectId={selectedProject?.id ?? null}
+            projectName={selectedProject?.name ?? null}
+            milestoneId={milestoneParam}
+            due={dueParam}
+            milestoneNamesById={milestoneNamesById}
+            onCountsChange={setCounts}
+            refreshKey={refreshKey}
+          />
+        ) : (
+          <TaskCalendar
+            projectId={selectedProject?.id ?? null}
+            milestoneId={milestoneParam}
+            milestoneNamesById={milestoneNamesById}
+            refreshKey={refreshKey}
+            onCreateForDate={(isoDate) => {
+              setCalendarDefaultDate(isoDate);
+              setModalOpen(true);
+            }}
+            onRefreshNeeded={() => setRefreshKey((n) => n + 1)}
+          />
+        )}
       </div>
 
       <AddTaskModal
@@ -230,7 +260,11 @@ export default function TasksPage() {
         projects={projects}
         employees={employees}
         defaultProjectId={selectedProject?.id ?? null}
-        onClose={() => setModalOpen(false)}
+        defaultDueDate={calendarDefaultDate}
+        onClose={() => {
+          setModalOpen(false);
+          setCalendarDefaultDate(null);
+        }}
         onCreated={() => setRefreshKey((n) => n + 1)}
       />
     </div>

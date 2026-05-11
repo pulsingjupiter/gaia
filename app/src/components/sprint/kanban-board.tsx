@@ -25,10 +25,19 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import Link from "next/link";
-import { ArrowRight, Calendar, Check, ClipboardList, Plus } from "lucide-react";
+import {
+  ArrowRight,
+  Calendar,
+  Check,
+  ClipboardList,
+  Pencil,
+  Plus,
+  Repeat,
+} from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { useEmployees } from "@/components/employees/employees-context";
 import { useProjects } from "@/lib/hooks/use-projects";
+import { AddTaskModal } from "@/components/tasks/add-task-modal";
 
 // Work tasks. Cron-fired runs moved to `scheduled_runs` post-cron-split;
 // this board reads work items only.
@@ -39,6 +48,8 @@ export type TaskStatus =
   | "review"
   | "done"
   | "archived";
+
+export type TaskRecurrence = "daily" | "weekdays" | "weekly" | "monthly";
 
 export type TaskRow = {
   id: string;
@@ -53,6 +64,9 @@ export type TaskRow = {
   project_id: string | null;
   milestone_id: string | null;
   due_date: number | null;
+  recurrence: TaskRecurrence | null;
+  recurrence_anchor: number | null;
+  parent_task_id: string | null;
 };
 
 type KanbanStatus = Extract<
@@ -115,6 +129,10 @@ export function KanbanBoard({
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [spawnToast, setSpawnToast] = useState<string | null>(null);
+  const [editTask, setEditTask] = useState<TaskRow | null>(null);
+  const { employees } = useEmployees();
+  const { projects } = useProjects();
 
   const refresh = useCallback(async () => {
     try {
@@ -197,6 +215,19 @@ export function KanbanBoard({
           },
         );
         if (!res.ok) throw new Error(`PATCH /api/backlog/${id} ${res.status}`);
+        const data = (await res.json().catch(() => null)) as
+          | { task?: TaskRow; spawned?: TaskRow | null }
+          | null;
+        if (data?.spawned) {
+          const spawned = data.spawned;
+          // Prepend the new instance to local state so the next render shows
+          // it in the Todo column without waiting for a poll.
+          setTasks((prev) => {
+            if (prev.some((t) => t.id === spawned.id)) return prev;
+            return [spawned, ...prev];
+          });
+          setSpawnToast(formatSpawnToast(spawned.due_date));
+        }
       } catch (err) {
         // Roll back on error.
         setTasks((prev) =>
@@ -207,6 +238,13 @@ export function KanbanBoard({
     },
     [],
   );
+
+  // Auto-dismiss the spawn toast after a beat.
+  useEffect(() => {
+    if (!spawnToast) return;
+    const id = setTimeout(() => setSpawnToast(null), 4500);
+    return () => clearTimeout(id);
+  }, [spawnToast]);
 
   const grouped = useMemo(() => {
     const buckets: Record<KanbanStatus, TaskRow[]> = {
@@ -250,6 +288,12 @@ export function KanbanBoard({
           {error}
         </div>
       ) : null}
+      {spawnToast ? (
+        <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-strong bg-white px-3 py-1.5 text-[11px] font-medium text-secondary shadow-sm">
+          <Repeat size={12} className="text-accent" />
+          {spawnToast}
+        </div>
+      ) : null}
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {COLUMNS.map((col) => (
@@ -259,12 +303,36 @@ export function KanbanBoard({
               label={col.label}
               tasks={grouped[col.id]}
               milestoneNamesById={milestoneNamesById}
+              onEdit={setEditTask}
             />
           ))}
         </div>
       </DndContext>
+      <AddTaskModal
+        open={editTask !== null}
+        projects={projects}
+        employees={employees}
+        task={editTask}
+        onClose={() => setEditTask(null)}
+        onCreated={() => {
+          setEditTask(null);
+          void refresh();
+        }}
+      />
     </>
   );
+}
+
+function formatSpawnToast(dueDate: number | null): string {
+  if (dueDate === null) return "Created next instance";
+  const d = new Date(dueDate);
+  if (!Number.isFinite(d.getTime())) return "Created next instance";
+  const label = d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return `Created next: ${label}`;
 }
 
 function Column({
@@ -272,11 +340,13 @@ function Column({
   label,
   tasks,
   milestoneNamesById,
+  onEdit,
 }: {
   id: KanbanStatus;
   label: string;
   tasks: TaskRow[];
   milestoneNamesById?: Record<string, string>;
+  onEdit: (task: TaskRow) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -309,6 +379,7 @@ function Column({
               key={t.id}
               task={t}
               milestoneNamesById={milestoneNamesById}
+              onEdit={onEdit}
             />
           ))
         )}
@@ -317,12 +388,21 @@ function Column({
   );
 }
 
+const RECURRENCE_LABEL: Record<TaskRecurrence, string> = {
+  daily: "Daily",
+  weekdays: "Weekdays",
+  weekly: "Weekly",
+  monthly: "Monthly",
+};
+
 function KanbanCard({
   task,
   milestoneNamesById,
+  onEdit,
 }: {
   task: TaskRow;
   milestoneNamesById?: Record<string, string>;
+  onEdit: (task: TaskRow) => void;
 }) {
   const { employees } = useEmployees();
   const { projects } = useProjects();
@@ -367,8 +447,17 @@ function KanbanCard({
           style={{ background: priorityColor }}
         />
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold leading-snug text-primary">
-            {task.title}
+          <div className="flex items-start gap-1.5 text-[13px] font-semibold leading-snug text-primary">
+            <span className="min-w-0 flex-1">{task.title}</span>
+            {task.recurrence ? (
+              <span
+                className="mt-0.5 inline-flex shrink-0 text-muted"
+                title={`Repeats: ${RECURRENCE_LABEL[task.recurrence]}`}
+                aria-label={`Repeats: ${RECURRENCE_LABEL[task.recurrence]}`}
+              >
+                <Repeat size={11} />
+              </span>
+            ) : null}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
             {project ? (
@@ -431,9 +520,28 @@ function KanbanCard({
             </>
           ) : null}
         </div>
-        {owner ? (
-          <Avatar initials={owner.initials} color={owner.accent} size={18} />
-        ) : null}
+        <div className="inline-flex items-center gap-1.5">
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              // Stop dnd-kit from interpreting this click as the start of a
+              // drag — the card itself is the drag handle.
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(task);
+            }}
+            title="Edit task"
+            aria-label="Edit task"
+            className="inline-flex size-5 items-center justify-center rounded-md text-muted hover:bg-surface-muted hover:text-primary"
+          >
+            <Pencil size={10} />
+          </button>
+          {owner ? (
+            <Avatar initials={owner.initials} color={owner.accent} size={18} />
+          ) : null}
+        </div>
       </div>
     </div>
   );
