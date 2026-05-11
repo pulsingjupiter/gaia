@@ -44,6 +44,10 @@ agents/*/inbox.json
 agents/_shared/files/*
 !agents/_shared/files/.gitkeep
 
+# User-uploaded custom avatars — local, never committed
+app/public/avatars/custom/*
+!app/public/avatars/custom/.gitkeep
+
 # Test instance — blank-slate Gaia on port 9898 (npm run dev:test).
 # DB + agent state are user-local fixtures, never commit. Keep the
 # `agents-test/` dir tracked via .gitkeep so the dir exists fresh on clone.

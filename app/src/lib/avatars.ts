@@ -25,7 +25,8 @@ export interface AgentAvatar {
     | "stealth"
     | "nature"
     | "performer"
-    | "wildcard";
+    | "wildcard"
+    | "custom";
   /** Short flavor text shown under the name in the picker. */
   description?: string;
 }
@@ -121,16 +122,47 @@ const AVATAR_INDEX: Map<string, AgentAvatar> = new Map(
   PRESET_AVATARS.map((a) => [a.id, a]),
 );
 
-export function getAvatarById(id: string): AgentAvatar | undefined {
-  return AVATAR_INDEX.get(id);
+const CUSTOM_PREFIX = "custom:";
+
+/**
+ * Returns true when `value` is a user-uploaded custom avatar id
+ * (`custom:<uuid>`). The file lives under `/avatars/custom/<uuid>.png`.
+ */
+export function isCustomAvatarId(value: string | null | undefined): value is string {
+  if (typeof value !== "string") return false;
+  if (!value.startsWith(CUSTOM_PREFIX)) return false;
+  // Must have a uuid suffix — guards against pasted "custom:" with nothing
+  // after, which would resolve to /avatars/custom/.png and 404.
+  return value.length > CUSTOM_PREFIX.length;
 }
 
 /**
- * Type guard — returns true when `value` is a known preset avatar id.
- * Use this to decide whether to render an SVG or fall back to emoji /
- * initials.
+ * For custom avatars synthesise a record on the fly — they aren't in the
+ * preset index, but the renderer + picker still want the same shape.
+ */
+export function getAvatarById(id: string): AgentAvatar | undefined {
+  const preset = AVATAR_INDEX.get(id);
+  if (preset) return preset;
+  if (isCustomAvatarId(id)) {
+    const uuid = id.slice(CUSTOM_PREFIX.length);
+    return {
+      id,
+      name: "Custom",
+      src: `/avatars/custom/${uuid}.png`,
+      archetype: "custom",
+      description: "Custom upload",
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Type guard — returns true when `value` is a known preset avatar id OR
+ * a user-uploaded custom avatar. Use this to decide whether to render an
+ * image vs. fall back to emoji / initials.
  */
 export function isAvatarId(value: string | null | undefined): value is string {
   if (typeof value !== "string" || value.length === 0) return false;
-  return AVATAR_INDEX.has(value);
+  if (AVATAR_INDEX.has(value)) return true;
+  return isCustomAvatarId(value);
 }
