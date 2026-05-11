@@ -13,6 +13,7 @@ import { FolderOpen, Plus, Telescope, X } from "lucide-react";
 import { PageHeader } from "@/components/shell/page-header";
 import { ProjectCard } from "@/components/projects/project-card";
 import { AddProjectModal } from "@/components/projects/add-project-modal";
+import { PlanWithClaudeModal } from "@/components/projects/plan-with-claude-modal";
 import {
   ProjectsToolbar,
   type SortOrder,
@@ -32,6 +33,8 @@ export default function ProjectsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [planProjectId, setPlanProjectId] = useState<string | null>(null);
+  const [planProjectName, setPlanProjectName] = useState<string | undefined>(undefined);
 
   const includeArchived = status === "archived";
   const {
@@ -178,6 +181,20 @@ export default function ProjectsPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onCreated={() => void refresh()}
+        onPlanWithClaude={(p) => {
+          setPlanProjectId(p.id);
+          setPlanProjectName(p.name);
+        }}
+      />
+
+      <PlanWithClaudeModal
+        open={planProjectId !== null}
+        projectId={planProjectId}
+        projectName={planProjectName}
+        onClose={() => setPlanProjectId(null)}
+        onApplied={() => {
+          void refresh();
+        }}
       />
 
       <ScanModal

@@ -7,7 +7,7 @@
  * the parent's `onCreated` is fired and the modal is closed.
  */
 import { useEffect, useState } from "react";
-import { Dices, FolderOpen, X } from "lucide-react";
+import { Dices, FolderOpen, Sparkles, X } from "lucide-react";
 import { PROJECT_ICON_OPTIONS } from "./icon-glyph";
 import { cn } from "@/lib/cn";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
@@ -43,9 +43,20 @@ type Props = {
    * inline (the hook-level `add()` swallows error text).
    */
   onCreated: (project: ProjectRow) => void;
+  /**
+   * Called when the user picks "Plan with Claude" on the post-create
+   * confirmation screen. The parent should open the wizard for `project.id`.
+   * When omitted, the post-create prompt's "Plan now" button is hidden.
+   */
+  onPlanWithClaude?: (project: ProjectRow) => void;
 };
 
-export function AddProjectModal({ open, onClose, onCreated }: Props) {
+export function AddProjectModal({
+  open,
+  onClose,
+  onCreated,
+  onPlanWithClaude,
+}: Props) {
   const [name, setName] = useState("");
   const [pathStr, setPathStr] = useState("");
   const [color, setColor] = useState(PALETTE[0]);
@@ -61,6 +72,7 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [createdProject, setCreatedProject] = useState<ProjectRow | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -74,6 +86,7 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
       setSubmitting(false);
       setPickerOpen(false);
       setBrowsing(false);
+      setCreatedProject(null);
     } else {
       // Re-roll a random adventurer each time the modal opens so users
       // discover the preset roster.
@@ -165,7 +178,12 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
       }
       const data = (await res.json()) as { project: ProjectRow };
       onCreated(data.project);
-      onClose();
+      // Don't close yet — show the post-create "Plan with Claude now?" prompt
+      // so the user has the option to jump straight into the wizard for the
+      // freshly-created project. The parent's project list has already been
+      // refreshed via `onCreated`.
+      setCreatedProject(data.project);
+      setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSubmitting(false);
@@ -186,10 +204,12 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-base font-semibold text-primary">
-              Add Project
+              {createdProject ? "Project created" : "Add Project"}
             </h2>
             <p className="mt-0.5 text-xs text-muted">
-              Tell Gaia where to watch for Claude Code sessions.
+              {createdProject
+                ? "Want to draft a plan for it right now?"
+                : "Tell Gaia where to watch for Claude Code sessions."}
             </p>
           </div>
           <button
@@ -202,6 +222,37 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
           </button>
         </div>
 
+        {createdProject ? (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-lg border border-subtle bg-surface-muted px-3 py-2 text-xs text-secondary">
+              <strong>{createdProject.name}</strong> is ready. You can plan it
+              with Claude now, or add tasks manually later.
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-strong bg-white px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-muted"
+              >
+                Skip — I&apos;ll add tasks myself
+              </button>
+              {onPlanWithClaude ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = createdProject;
+                    onClose();
+                    onPlanWithClaude(p);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+                >
+                  <Sparkles size={12} />
+                  Plan with Claude now
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
         <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
           <Field label="Name" required>
             <input
@@ -354,6 +405,7 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
             </button>
           </div>
         </form>
+        )}
       </div>
 
       <IconPicker

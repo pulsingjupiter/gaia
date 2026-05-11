@@ -11,20 +11,24 @@
  * tab — it's the same form, no separate modal.
  */
 import { use, useState } from "react";
-import { ListTodo, Settings as SettingsIcon, FileText, Activity, Loader2 } from "lucide-react";
+import { Flag, ListTodo, Settings as SettingsIcon, FileText, Activity, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { useProjectDetail } from "@/lib/hooks/use-project-detail";
 import { ProjectHeader } from "@/components/projects/detail/project-header";
+import { ProjectStatusStrip } from "@/components/projects/detail/status-strip";
 import { SessionsTab } from "@/components/projects/detail/sessions-tab";
+import { MilestonesTab } from "@/components/projects/detail/milestones-tab";
 import { BacklogTab } from "@/components/projects/detail/backlog-tab";
 import { FilesTab } from "@/components/projects/detail/files-tab";
 import { SettingsTab } from "@/components/projects/detail/settings-tab";
+import { PlanWithClaudeModal } from "@/components/projects/plan-with-claude-modal";
 
-type TabId = "sessions" | "backlog" | "files" | "settings";
+type TabId = "sessions" | "milestones" | "backlog" | "files" | "settings";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "sessions", label: "Sessions", icon: Activity },
+  { id: "milestones", label: "Milestones", icon: Flag },
   { id: "backlog", label: "Backlog", icon: ListTodo },
   { id: "files", label: "Files", icon: FileText },
   { id: "settings", label: "Settings", icon: SettingsIcon },
@@ -39,6 +43,8 @@ export default function ProjectDetailPage({
   const detail = useProjectDetail(id);
   const [tab, setTab] = useState<TabId>("sessions");
   const [archiveConfirm, setArchiveConfirm] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planNonce, setPlanNonce] = useState(0);
 
   if (detail.loading && !detail.project) {
     return (
@@ -73,7 +79,10 @@ export default function ProjectDetailPage({
         stats={detail.stats}
         onEdit={() => setTab("settings")}
         onArchive={() => setArchiveConfirm(true)}
+        onPlanWithClaude={() => setPlanOpen(true)}
       />
+
+      <ProjectStatusStrip projectId={project.id} />
 
       <div className="border-b border-subtle">
         <div className="flex gap-6">
@@ -111,8 +120,18 @@ export default function ProjectDetailPage({
               agent_avatar: project.agent_avatar,
             }}
           />
+        ) : tab === "milestones" ? (
+          <MilestonesTab
+            key={`m-${planNonce}`}
+            projectId={project.id}
+            onPlanWithClaude={() => setPlanOpen(true)}
+          />
         ) : tab === "backlog" ? (
-          <BacklogTab projectId={project.id} />
+          <BacklogTab
+            key={`b-${planNonce}`}
+            projectId={project.id}
+            onPlanWithClaude={() => setPlanOpen(true)}
+          />
         ) : tab === "files" ? (
           <FilesTab />
         ) : (
@@ -123,6 +142,20 @@ export default function ProjectDetailPage({
           />
         )}
       </div>
+
+      <PlanWithClaudeModal
+        open={planOpen}
+        projectId={project.id}
+        projectName={project.name}
+        onClose={() => setPlanOpen(false)}
+        onApplied={() => {
+          // Bump the nonce to remount Milestones + Backlog tabs so their
+          // hooks re-fetch. Also surface the milestones tab so the user sees
+          // what just got created.
+          setPlanNonce((n) => n + 1);
+          setTab("milestones");
+        }}
+      />
 
       {archiveConfirm ? (
         <ConfirmArchive

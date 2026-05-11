@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { Archive, ChevronRight, MoreHorizontal, Pencil } from "lucide-react";
+import { Archive, ChevronRight, MoreHorizontal, Pencil, Sparkles } from "lucide-react";
 
 import { IconGlyph } from "../icon-glyph";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
@@ -16,6 +16,7 @@ type Props = {
   stats: ProjectStats | null;
   onEdit: () => void;
   onArchive: () => void;
+  onPlanWithClaude?: () => void;
 };
 
 const DEFAULT_COLOR = "#5B5BD6";
@@ -39,7 +40,13 @@ function deriveStatus(
   return { label: "Idle", color: "var(--status-idle)" };
 }
 
-export function ProjectHeader({ project, stats, onEdit, onArchive }: Props) {
+export function ProjectHeader({
+  project,
+  stats,
+  onEdit,
+  onArchive,
+  onPlanWithClaude,
+}: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const color = project.color ?? DEFAULT_COLOR;
   const status = deriveStatus(project, stats);
@@ -113,6 +120,16 @@ export function ProjectHeader({ project, stats, onEdit, onArchive }: Props) {
       </div>
 
       <div className="relative flex shrink-0 items-center gap-2">
+        {onPlanWithClaude ? (
+          <button
+            type="button"
+            onClick={onPlanWithClaude}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted"
+          >
+            <Sparkles size={12} />
+            Plan with Claude
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onEdit}
