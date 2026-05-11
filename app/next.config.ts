@@ -9,6 +9,10 @@ import type { NextConfig } from "next";
  */
 const nextConfig: NextConfig = {
   distDir: process.env.GAIA_DIST_DIR || ".next",
+  async redirects() {
+    // /sprint was renamed to /tasks. Permanent so cached links update.
+    return [{ source: "/sprint", destination: "/tasks", permanent: true }];
+  },
 };
 
 export default nextConfig;

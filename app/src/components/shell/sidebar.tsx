@@ -21,6 +21,7 @@ import { GaiaLogo } from "./gaia-logo";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { useEmployees } from "@/components/employees/employees-context";
 import { useUnreadCount } from "@/lib/hooks/use-unread-count";
+import { useTaskDueSummary } from "@/lib/hooks/use-task-due-summary";
 import { cn } from "@/lib/cn";
 
 type NavItem = {
@@ -29,18 +30,20 @@ type NavItem = {
   icon: LucideIcon;
   /** When set, the sidebar will render a live unread-count badge on this row. */
   showUnreadBadge?: boolean;
+  /** When set, the sidebar renders a pulsing red overdue-count badge. */
+  showOverdueBadge?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutGrid },
   { href: "/agents", label: "Agents", icon: Users2 },
-  { href: "/playbooks", label: "Playbooks", icon: BookOpen },
-  { href: "/sprint", label: "Sprint", icon: Kanban },
   { href: "/projects", label: "Projects", icon: Folders },
-  { href: "/docs", label: "Docs", icon: FileText },
+  { href: "/tasks", label: "Tasks", icon: Kanban, showOverdueBadge: true },
+  { href: "/playbooks", label: "Playbooks", icon: BookOpen },
   { href: "/schedule", label: "Schedule", icon: Calendar },
   { href: "/conversations", label: "Inbox", icon: Inbox, showUnreadBadge: true },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/docs", label: "Docs", icon: FileText },
   { href: "/cost", label: "Cost", icon: DollarSign },
   { href: "/files", label: "Files", icon: Folder },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -56,6 +59,9 @@ export function Sidebar() {
   const { employees } = useEmployees();
   // Live unread totals (chat + notification messages). 8s poll under the hood.
   const { total: unreadTotal, byKind: unreadByKind } = useUnreadCount();
+  // Global overdue-task count for the Tasks row pulse. 60s poll.
+  const { summary: taskSummary } = useTaskDueSummary(null);
+  const overdueCount = taskSummary.overdue;
   // DB 'idle' status is mapped to UI 'Online' — these agents are awaiting
   // work and considered online for the workforce footer.
   const onlineCount = employees.filter((e) => e.status === "Online").length;
@@ -88,6 +94,7 @@ export function Sidebar() {
                 ? pathname === "/"
                 : pathname.startsWith(item.href);
             const showBadge = item.showUnreadBadge && unreadTotal > 0;
+            const showOverdue = item.showOverdueBadge && overdueCount > 0;
             return (
               <Link
                 key={item.href}
@@ -112,6 +119,14 @@ export function Sidebar() {
                     aria-label={`${unreadTotal} unread`}
                   >
                     {formatBadgeCount(unreadTotal)}
+                  </span>
+                ) : null}
+                {showOverdue ? (
+                  <span
+                    className="animate-pulse rounded-full bg-status-error px-1.5 py-px text-[10px] font-semibold text-white"
+                    aria-label={`${overdueCount} overdue`}
+                  >
+                    {formatBadgeCount(overdueCount)}
                   </span>
                 ) : null}
               </Link>

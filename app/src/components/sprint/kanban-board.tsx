@@ -25,10 +25,35 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import Link from "next/link";
-import { Calendar, Check } from "lucide-react";
+import { ArrowRight, Calendar, Check, ClipboardList, Plus } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { useEmployees } from "@/components/employees/employees-context";
-import type { TaskRow, TaskStatus } from "@/lib/hooks/use-cron-tasks";
+import { useProjects } from "@/lib/hooks/use-projects";
+
+// Work tasks. Cron-fired runs moved to `scheduled_runs` post-cron-split;
+// this board reads work items only.
+export type TaskStatus =
+  | "backlog"
+  | "todo"
+  | "in_progress"
+  | "review"
+  | "done"
+  | "archived";
+
+export type TaskRow = {
+  id: string;
+  title: string;
+  employee_id: string | null;
+  skill: string | null;
+  priority: "high" | "medium" | "low";
+  status: TaskStatus;
+  description: string | null;
+  created_at: number | null;
+  playbook: string | null;
+  project_id: string | null;
+  milestone_id: string | null;
+  due_date: number | null;
+};
 
 type KanbanStatus = Extract<
   TaskStatus,
@@ -57,17 +82,52 @@ export type KanbanCounts = {
 };
 
 export type KanbanBoardProps = {
+  /** Filter the board to a single project. `null`/undefined = all projects. */
+  projectId?: string | null;
+  /** Human label used by the smart empty state when a project filter is set. */
+  projectName?: string | null;
+  /** Filter the board to a single milestone. Only honoured with a project. */
+  milestoneId?: string | null;
+  /**
+   * Pre-baked deadline bucket. Server accepts overdue|today|this_week|none —
+   * matches the URL `?due=…` param on /tasks. `null`/undefined = no filter.
+   */
+  due?: "overdue" | "today" | "this_week" | "none" | null;
+  /** Display lookup so cards can render `milestone.name` from `milestone_id`. */
+  milestoneNamesById?: Record<string, string>;
   onCountsChange?: (counts: KanbanCounts) => void;
+  /**
+   * Increment to force a refetch — used by the parent's "Add Task" flow to
+   * pull the new row in without waiting for a poll.
+   */
+  refreshKey?: number;
 };
 
-export function KanbanBoard({ onCountsChange }: KanbanBoardProps) {
+export function KanbanBoard({
+  projectId = null,
+  projectName = null,
+  milestoneId = null,
+  due = null,
+  milestoneNamesById,
+  onCountsChange,
+  refreshKey = 0,
+}: KanbanBoardProps) {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/tasks", { cache: "no-store" });
+      // Server already supports project_id filter (see /api/tasks GET) — use
+      // it so the wire payload stays small when a project is selected.
+      const sp = new URLSearchParams();
+      if (projectId) sp.set("project_id", projectId);
+      if (milestoneId) sp.set("milestone_id", milestoneId);
+      if (due) sp.set("due", due);
+      const qs = sp.toString();
+      const res = await fetch(`/api/tasks${qs ? `?${qs}` : ""}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(`GET /api/tasks ${res.status}`);
       const data = (await res.json()) as { tasks: TaskRow[] };
       const filtered = (data.tasks ?? []).filter((t) =>
@@ -80,11 +140,11 @@ export function KanbanBoard({ onCountsChange }: KanbanBoardProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId, milestoneId, due]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshKey]);
 
   // Report counts up so the KPI strip can render without a second fetch.
   useEffect(() => {
@@ -166,28 +226,20 @@ export function KanbanBoard({ onCountsChange }: KanbanBoardProps) {
   if (loading && tasks.length === 0) {
     return (
       <div className="card-surface px-4 py-12 text-center text-xs text-muted">
-        Loading sprint tasks…
+        Loading tasks…
       </div>
     );
   }
 
+  const hasFilter = Boolean(milestoneId) || Boolean(due);
+
   if (!loading && tasks.length === 0) {
     return (
-      <div className="card-surface px-4 py-16 text-center">
-        <div className="text-sm font-semibold text-primary">
-          No active sprint tasks
-        </div>
-        <p className="mx-auto mt-1 max-w-md text-xs text-muted">
-          Promote a task from any project&rsquo;s Backlog tab to start moving
-          it through the sprint.
-        </p>
-        <Link
-          href="/projects"
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
-        >
-          Open Projects
-        </Link>
-      </div>
+      <EmptyState
+        projectId={projectId}
+        projectName={projectName}
+        hasFilter={hasFilter}
+      />
     );
   }
 
@@ -206,6 +258,7 @@ export function KanbanBoard({ onCountsChange }: KanbanBoardProps) {
               id={col.id}
               label={col.label}
               tasks={grouped[col.id]}
+              milestoneNamesById={milestoneNamesById}
             />
           ))}
         </div>
@@ -218,10 +271,12 @@ function Column({
   id,
   label,
   tasks,
+  milestoneNamesById,
 }: {
   id: KanbanStatus;
   label: string;
   tasks: TaskRow[];
+  milestoneNamesById?: Record<string, string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -249,17 +304,33 @@ function Column({
             No tasks here yet
           </div>
         ) : (
-          tasks.map((t) => <KanbanCard key={t.id} task={t} />)
+          tasks.map((t) => (
+            <KanbanCard
+              key={t.id}
+              task={t}
+              milestoneNamesById={milestoneNamesById}
+            />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function KanbanCard({ task }: { task: TaskRow }) {
+function KanbanCard({
+  task,
+  milestoneNamesById,
+}: {
+  task: TaskRow;
+  milestoneNamesById?: Record<string, string>;
+}) {
   const { employees } = useEmployees();
+  const { projects } = useProjects();
   const owner = task.employee_id
     ? employees.find((e) => e.id === task.employee_id)
+    : null;
+  const project = task.project_id
+    ? projects.find((p) => p.id === task.project_id)
     : null;
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: task.id });
@@ -272,6 +343,10 @@ function KanbanCard({ task }: { task: TaskRow }) {
         : "#3B82F6";
 
   const dateLabel = task.created_at ? formatShortDate(task.created_at) : null;
+  const due = task.due_date != null ? dueLabel(task.due_date) : null;
+  const milestoneName = task.milestone_id
+    ? milestoneNamesById?.[task.milestone_id] ?? null
+    : null;
 
   return (
     <div
@@ -295,10 +370,50 @@ function KanbanCard({ task }: { task: TaskRow }) {
           <div className="text-[13px] font-semibold leading-snug text-primary">
             {task.title}
           </div>
-          {task.playbook ?? task.skill ? (
-            <span className="mt-1.5 inline-flex rounded-full bg-surface-muted px-1.5 py-0.5 text-[9px] font-medium text-secondary">
-              {task.playbook ?? task.skill}
-            </span>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            {project ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border bg-white px-1.5 py-0.5 text-[9px] font-medium"
+                style={{
+                  borderColor: (project.color ?? "#5B5BD6") + "40",
+                  color: project.color ?? "#5B5BD6",
+                }}
+                title={project.name}
+              >
+                <span
+                  className="size-1.5 rounded-full"
+                  style={{ background: project.color ?? "#5B5BD6" }}
+                />
+                <span className="truncate">{project.name}</span>
+              </span>
+            ) : null}
+            {task.playbook ?? task.skill ? (
+              <span className="inline-flex rounded-full bg-surface-muted px-1.5 py-0.5 text-[9px] font-medium text-secondary">
+                {task.playbook ?? task.skill}
+              </span>
+            ) : null}
+          </div>
+          {due || milestoneName ? (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {due ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+                  style={{ background: due.bg, color: due.fg }}
+                  title={`Due ${new Date(task.due_date as number).toLocaleDateString()}`}
+                >
+                  <Calendar size={9} />
+                  {due.label}
+                </span>
+              ) : null}
+              {milestoneName ? (
+                <span
+                  className="inline-flex max-w-[140px] items-center rounded-full bg-surface-muted px-1.5 py-0.5 text-[9px] font-medium text-secondary"
+                  title={milestoneName}
+                >
+                  <span className="truncate">{milestoneName}</span>
+                </span>
+              ) : null}
+            </div>
           ) : null}
         </div>
         {task.status === "done" ? (
@@ -324,6 +439,36 @@ function KanbanCard({ task }: { task: TaskRow }) {
   );
 }
 
+function dueLabel(ms: number): { label: string; bg: string; fg: string } {
+  const diff = ms - Date.now();
+  const day = 86_400_000;
+  if (diff < -day) {
+    return {
+      label: `Overdue ${Math.abs(Math.floor(diff / day))}d`,
+      bg: "#FEE2E2",
+      fg: "#B91C1C",
+    };
+  }
+  if (diff < 0) return { label: "Overdue today", bg: "#FEE2E2", fg: "#B91C1C" };
+  if (diff < day) return { label: "Due today", bg: "#FEF3C7", fg: "#B45309" };
+  if (diff < 2 * day) return { label: "Due tomorrow", bg: "#FEF3C7", fg: "#B45309" };
+  if (diff < 7 * day) {
+    const d = new Date(ms);
+    return {
+      label: `Due ${d.toLocaleDateString(undefined, { weekday: "short" })}`,
+      bg: "#FEF3C7",
+      fg: "#B45309",
+    };
+  }
+  if (diff < 14 * day) return { label: "Due in 2 weeks", bg: "#D1FAE5", fg: "#047857" };
+  const d = new Date(ms);
+  return {
+    label: `Due ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+    bg: "#D1FAE5",
+    fg: "#047857",
+  };
+}
+
 function formatShortDate(ms: number): string {
   try {
     return new Date(ms).toLocaleDateString(undefined, {
@@ -333,4 +478,92 @@ function formatShortDate(ms: number): string {
   } catch {
     return "";
   }
+}
+
+function EmptyState({
+  projectId,
+  projectName,
+  hasFilter,
+}: {
+  projectId: string | null;
+  projectName: string | null;
+  hasFilter: boolean;
+}) {
+  // Filter-driven empty state — let the user clear filters rather than
+  // assume the project itself is empty.
+  if (hasFilter) {
+    return (
+      <div className="card-surface flex flex-col items-center justify-center px-6 py-16 text-center">
+        <span className="flex size-12 items-center justify-center rounded-full bg-surface-muted text-muted">
+          <ClipboardList size={22} />
+        </span>
+        <div className="mt-4 text-sm font-semibold text-primary">
+          No tasks match these filters
+        </div>
+        <p className="mx-auto mt-1 max-w-md text-xs text-muted">
+          Adjust the milestone or due-date filter to see more tasks.
+        </p>
+      </div>
+    );
+  }
+  // Scoped to a specific project — point the user back to that project so
+  // they can promote items from its backlog instead of creating a new one.
+  if (projectId) {
+    const name = projectName ?? "this project";
+    return (
+      <div className="card-surface flex flex-col items-center justify-center px-6 py-20 text-center">
+        <span className="flex size-12 items-center justify-center rounded-full bg-surface-muted text-muted">
+          <ClipboardList size={22} />
+        </span>
+        <div className="mt-4 text-sm font-semibold text-primary">
+          No active tasks in {name}
+        </div>
+        <p className="mx-auto mt-1 max-w-md text-xs text-muted">
+          Promote items from this project&rsquo;s backlog to track them here.
+        </p>
+        <div className="mt-5 flex items-center gap-2">
+          <Link
+            href={`/projects/${encodeURIComponent(projectId)}`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+          >
+            <ArrowRight size={12} />
+            Open {name}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Global empty state — no project filter and no tasks anywhere.
+  return (
+    <div className="card-surface flex flex-col items-center justify-center px-6 py-20 text-center">
+      <span className="flex size-12 items-center justify-center rounded-full bg-surface-muted text-muted">
+        <ClipboardList size={22} />
+      </span>
+      <div className="mt-4 text-sm font-semibold text-primary">
+        No active tasks
+      </div>
+      <p className="mx-auto mt-1 max-w-md text-xs text-muted">
+        Tasks live inside projects. Create a project, add items to its backlog,
+        then promote them here to track progress as they move through your
+        workflow.
+      </p>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <Link
+          href="/projects"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+        >
+          <Plus size={12} />
+          Create a project
+        </Link>
+        <Link
+          href="/projects"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-2 text-xs font-semibold text-secondary hover:bg-surface-muted"
+        >
+          <ArrowRight size={12} />
+          Open Projects
+        </Link>
+      </div>
+    </div>
+  );
 }

@@ -4,7 +4,7 @@ import { BarChart3, Plus, UserPlus, ClipboardList } from "lucide-react";
 const ACTIONS = [
   { label: "New Playbook", icon: Plus, href: "/playbooks" },
   { label: "Add Agent", icon: UserPlus, href: "/agents" },
-  { label: "Create Task", icon: ClipboardList, href: "/sprint" },
+  { label: "Create Task", icon: ClipboardList, href: "/tasks" },
   { label: "View Analytics", icon: BarChart3, href: "/activity" },
 ];
 
