@@ -1,10 +1,11 @@
 /**
- * POST /api/tasks/[id]/toggle  body: { enabled: boolean }  → { task }
+ * POST /api/scheduled-runs/[id]/toggle  body: { enabled: boolean }
+ *      → { scheduled_run }
  *
- * Flips `tasks.enabled`. The cron scheduler's 30s sync loop picks up the
- * change automatically — no need to restart anything.
+ * Flips `scheduled_runs.enabled`. The cron scheduler's 30s sync loop picks up
+ * the change automatically.
  */
-import { getTask, updateTask } from "@/server/db.ts";
+import { getScheduledRun, toggleScheduledRun } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 
 export const runtime = "nodejs";
@@ -16,9 +17,12 @@ export async function POST(
 ): Promise<Response> {
   ensureSeeded();
   const { id } = await ctx.params;
-  const existing = getTask(id);
+  const existing = getScheduledRun(id);
   if (!existing) {
-    return Response.json({ error: `task '${id}' not found` }, { status: 404 });
+    return Response.json(
+      { error: `scheduled_run '${id}' not found` },
+      { status: 404 },
+    );
   }
 
   let body: { enabled?: unknown };
@@ -33,6 +37,6 @@ export async function POST(
       { status: 400 },
     );
   }
-  const task = updateTask(id, { enabled: body.enabled });
-  return Response.json({ task });
+  const scheduled_run = toggleScheduledRun(id, body.enabled);
+  return Response.json({ scheduled_run });
 }

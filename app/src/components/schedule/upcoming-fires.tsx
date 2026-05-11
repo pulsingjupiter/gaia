@@ -21,17 +21,21 @@
 import { useEffect, useState } from "react";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { useEmployees } from "@/components/employees/employees-context";
-import type { TaskRow } from "@/lib/hooks/use-cron-tasks";
+import type { ScheduledRunRow } from "@/lib/hooks/use-scheduled-runs";
 import type { Employee } from "@/lib/types";
 
 export type UpcomingFiresProps = {
-  tasks: TaskRow[];
+  runs: ScheduledRunRow[];
 };
 
 const HORIZON_MS = 24 * 60 * 60 * 1000;
 const TICK_MS = 30_000;
 
-export function UpcomingFires({ tasks }: UpcomingFiresProps) {
+function titleFor(run: ScheduledRunRow): string {
+  return (run.human_label && run.human_label.trim()) || run.id;
+}
+
+export function UpcomingFires({ runs }: UpcomingFiresProps) {
   const { employees } = useEmployees();
   const [now, setNow] = useState(() => Date.now());
 
@@ -43,26 +47,26 @@ export function UpcomingFires({ tasks }: UpcomingFiresProps) {
 
   const employeeById = new Map(employees.map((e) => [e.id, e]));
 
-  const enabled = tasks.filter(
+  const enabled = runs.filter(
     (t) =>
       t.enabled === 1 &&
       typeof t.schedule_cron === "string" &&
       t.schedule_cron.trim() !== "",
   );
 
-  type Row = {
-    task: TaskRow;
+  type RowData = {
+    run: ScheduledRunRow;
     employee: Employee | undefined;
     nextFire: number | null;
     deltaMs: number | null;
   };
 
-  const rows: Row[] = enabled.map((task) => {
-    const next = computeNextFire(task.schedule_cron ?? "", now);
+  const rows: RowData[] = enabled.map((run) => {
+    const next = computeNextFire(run.schedule_cron ?? "", now);
     return {
-      task,
-      employee: task.employee_id
-        ? employeeById.get(task.employee_id)
+      run,
+      employee: run.employee_id
+        ? employeeById.get(run.employee_id)
         : undefined,
       nextFire: next,
       deltaMs: next === null ? null : next - now,
@@ -70,7 +74,7 @@ export function UpcomingFires({ tasks }: UpcomingFiresProps) {
   });
 
   // Order: known next-fires (within horizon) first, ascending; then "Custom"
-  // tasks at the bottom; tasks beyond the 24h horizon are dropped.
+  // rows at the bottom; rows beyond the 24h horizon are dropped.
   const dated = rows
     .filter((r) => r.deltaMs !== null && r.deltaMs <= HORIZON_MS)
     .sort((a, b) => (a.deltaMs ?? 0) - (b.deltaMs ?? 0));
@@ -99,18 +103,18 @@ export function UpcomingFires({ tasks }: UpcomingFiresProps) {
 
   return (
     <div className="card-surface divide-y divide-subtle overflow-hidden">
-      {dated.map(({ task, employee, deltaMs }) => (
+      {dated.map(({ run, employee, deltaMs }) => (
         <Row
-          key={task.id}
-          task={task}
+          key={run.id}
+          run={run}
           employee={employee}
           deltaLabel={deltaMs === null ? null : formatDelta(deltaMs)}
         />
       ))}
-      {custom.map(({ task, employee }) => (
+      {custom.map(({ run, employee }) => (
         <Row
-          key={task.id}
-          task={task}
+          key={run.id}
+          run={run}
           employee={employee}
           deltaLabel={null}
           customLabel="Custom"
@@ -121,12 +125,12 @@ export function UpcomingFires({ tasks }: UpcomingFiresProps) {
 }
 
 function Row({
-  task,
+  run,
   employee,
   deltaLabel,
   customLabel,
 }: {
-  task: TaskRow;
+  run: ScheduledRunRow;
   employee: Employee | undefined;
   deltaLabel: string | null;
   customLabel?: string;
@@ -145,14 +149,14 @@ function Row({
       )}
       <div className="min-w-0 flex-1 leading-tight">
         <div className="truncate text-xs font-semibold text-primary">
-          {task.title}
+          {titleFor(run)}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted">
           <span className="truncate">{employee?.name ?? "—"}</span>
-          {task.skill ? (
+          {run.skill ? (
             <>
               <span aria-hidden>•</span>
-              <span className="truncate">{task.skill}</span>
+              <span className="truncate">{run.skill}</span>
             </>
           ) : null}
         </div>
@@ -168,7 +172,7 @@ function Row({
           </span>
         ) : null}
         <span className="font-mono text-[10px] text-muted">
-          {task.schedule_cron ?? ""}
+          {run.schedule_cron ?? ""}
         </span>
       </div>
     </div>

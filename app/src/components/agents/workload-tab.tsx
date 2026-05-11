@@ -122,13 +122,15 @@ export function WorkloadTab({ employee }: { employee: EmployeeRow }) {
       >
         {workload.scheduled.length > 0 ? (
           <ul className="divide-y divide-subtle">
-            {workload.scheduled.map((task) => {
-              const next = task.schedule_cron
-                ? computeNextFire(task.schedule_cron, Date.now())
+            {workload.scheduled.map((run) => {
+              const next = run.schedule_cron
+                ? computeNextFire(run.schedule_cron, Date.now())
                 : null;
+              const label =
+                (run.human_label && run.human_label.trim()) || run.id;
               return (
                 <li
-                  key={task.id}
+                  key={run.id}
                   className="flex items-center gap-3 px-4 py-2.5 text-xs"
                 >
                   <AgentAvatar
@@ -139,15 +141,15 @@ export function WorkloadTab({ employee }: { employee: EmployeeRow }) {
                   />
                   <div className="min-w-0 flex-1 leading-tight">
                     <div className="truncate font-semibold text-primary">
-                      {task.title}
+                      {label}
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted">
-                      <span>{describeSchedule(task)}</span>
-                      {task.skill ? (
+                      <span>{describeSchedule(run)}</span>
+                      {run.skill ? (
                         <>
                           <span aria-hidden>•</span>
                           <span className="rounded bg-surface-muted px-1 py-0.5 font-mono">
-                            {task.skill}
+                            {run.skill}
                           </span>
                         </>
                       ) : null}

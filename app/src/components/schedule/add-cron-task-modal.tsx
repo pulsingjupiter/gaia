@@ -1,11 +1,17 @@
 "use client";
 /**
- * AddCronTaskModal — captures a new scheduled task and POSTs it to /api/tasks.
+ * AddCronTaskModal — captures a new scheduled run and POSTs it to
+ * /api/scheduled-runs.
  *
  * Schedule UX is preset-first: a chip cluster of common cadences plus a
  * "Custom" escape hatch with a raw cron field. The "preview" line under the
  * custom field reuses the same describer as the row component so what the
  * user types matches what they'll see in the table.
+ *
+ * Note: the project field that lived on the old `tasks`-backed modal is
+ * intentionally dropped — the new `scheduled_runs` schema has no `project_id`
+ * column. Cron-fired autonomy is global; project-scoped runs can return when
+ * that field becomes useful on the new table.
  */
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
@@ -15,22 +21,26 @@ import { cn } from "@/lib/cn";
 import type { Employee } from "@/lib/types";
 import type { ProjectRow } from "@/lib/hooks/use-projects";
 import type {
-  CreateCronTaskInput,
-  TaskRow,
-  UpdateCronTaskInput,
-} from "@/lib/hooks/use-cron-tasks";
+  CreateScheduledRunInput,
+  ScheduledRunRow,
+  UpdateScheduledRunInput,
+} from "@/lib/hooks/use-scheduled-runs";
 
 export type AddCronTaskModalProps = {
   open: boolean;
   employees: Employee[];
-  projects: ProjectRow[];
+  /** Reserved for future use — schedules currently have no project field. */
+  projects?: ProjectRow[];
   /** When set, the modal switches into edit mode and pre-populates fields. */
-  editingTask?: TaskRow | null;
+  editingRun?: ScheduledRunRow | null;
   onClose: () => void;
-  /** Resolves with the created task row, or `null` on error. */
-  onCreate: (input: CreateCronTaskInput) => Promise<TaskRow | null>;
-  /** Resolves with the updated task row, or `null` on error. Required for edit mode. */
-  onUpdate?: (id: string, patch: UpdateCronTaskInput) => Promise<TaskRow | null>;
+  /** Resolves with the created row, or `null` on error. */
+  onCreate: (input: CreateScheduledRunInput) => Promise<ScheduledRunRow | null>;
+  /** Resolves with the updated row, or `null` on error. Required for edit mode. */
+  onUpdate?: (
+    id: string,
+    patch: UpdateScheduledRunInput,
+  ) => Promise<ScheduledRunRow | null>;
 };
 
 type Preset = {
@@ -61,13 +71,12 @@ function isValidCron(expr: string): boolean {
 export function AddCronTaskModal({
   open,
   employees,
-  projects,
-  editingTask,
+  editingRun,
   onClose,
   onCreate,
   onUpdate,
 }: AddCronTaskModalProps) {
-  const isEdit = !!editingTask;
+  const isEdit = !!editingRun;
   const selectableEmployees = useMemo(
     () =>
       employees.filter(
@@ -86,19 +95,20 @@ export function AddCronTaskModal({
   const [customCron, setCustomCron] = useState("*/5 * * * *");
   const [humanLabel, setHumanLabel] = useState(PRESETS[0]!.label);
   const [humanLabelDirty, setHumanLabelDirty] = useState(false);
-  const [projectId, setProjectId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset on open. In edit mode, hydrate from the task; otherwise pick sane
+  // Reset on open. In edit mode, hydrate from the row; otherwise pick sane
   // defaults (first non-system agent, every-5-min preset).
   useEffect(() => {
     if (!open) return;
-    if (editingTask) {
-      setTitle(editingTask.title ?? "");
-      setEmployeeId(editingTask.employee_id ?? "");
-      setSkill(editingTask.skill ?? "");
-      const cron = editingTask.schedule_cron ?? "";
+    if (editingRun) {
+      // ScheduledRunRow has no `title` column — surface `human_label` as the
+      // editable title so the user can rename the row.
+      setTitle(editingRun.human_label ?? editingRun.id);
+      setEmployeeId(editingRun.employee_id ?? "");
+      setSkill(editingRun.skill ?? "");
+      const cron = editingRun.schedule_cron ?? "";
       const matchingPreset = PRESETS.find((p) => p.cron === cron);
       if (matchingPreset) {
         setPresetId(matchingPreset.id);
@@ -107,14 +117,13 @@ export function AddCronTaskModal({
         setPresetId(CUSTOM_ID);
         setCustomCron(cron || "*/5 * * * *");
       }
-      setHumanLabel(editingTask.human_label ?? "");
+      setHumanLabel(editingRun.human_label ?? "");
       // Mark dirty if the stored label diverges from any preset label, so the
       // preset toggle below doesn't clobber the user's custom wording.
       setHumanLabelDirty(
-        !!editingTask.human_label &&
-          !PRESETS.some((p) => p.label === editingTask.human_label),
+        !!editingRun.human_label &&
+          !PRESETS.some((p) => p.label === editingRun.human_label),
       );
-      setProjectId(editingTask.project_id ?? "");
     } else {
       setTitle("");
       setEmployeeId(selectableEmployees[0]?.id ?? "");
@@ -123,11 +132,10 @@ export function AddCronTaskModal({
       setCustomCron("*/5 * * * *");
       setHumanLabel(PRESETS[0]!.label);
       setHumanLabelDirty(false);
-      setProjectId("");
     }
     setSubmitting(false);
     setError(null);
-  }, [open, selectableEmployees, editingTask]);
+  }, [open, selectableEmployees, editingRun]);
 
   // Esc closes.
   useEffect(() => {
@@ -182,35 +190,31 @@ export function AddCronTaskModal({
 
     setSubmitting(true);
     const trimmedLabel = humanLabel.trim();
-    const trimmedProject = projectId.trim();
     try {
-      if (isEdit && editingTask && onUpdate) {
-        const patch: UpdateCronTaskInput = {
-          title: title.trim(),
+      if (isEdit && editingRun && onUpdate) {
+        const patch: UpdateScheduledRunInput = {
           employee_id: employeeId,
           skill: skill.trim(),
           schedule_cron: cronExpr,
-          human_label: trimmedLabel || null,
-          project_id: trimmedProject || null,
+          human_label: trimmedLabel || title.trim() || null,
         };
-        const task = await onUpdate(editingTask.id, patch);
-        if (!task) {
+        const row = await onUpdate(editingRun.id, patch);
+        if (!row) {
           setError("Could not save changes — see console for details.");
           setSubmitting(false);
           return;
         }
       } else {
-        const input: CreateCronTaskInput = {
+        const input: CreateScheduledRunInput = {
           title: title.trim(),
           employee_id: employeeId,
           skill: skill.trim(),
           schedule_cron: cronExpr,
         };
         if (trimmedLabel) input.human_label = trimmedLabel;
-        if (trimmedProject) input.project_id = trimmedProject;
-        const task = await onCreate(input);
-        if (!task) {
-          setError("Could not create task — see console for details.");
+        const row = await onCreate(input);
+        if (!row) {
+          setError("Could not create scheduled run — see console for details.");
           setSubmitting(false);
           return;
         }
@@ -376,21 +380,6 @@ export function AddCronTaskModal({
               placeholder="e.g. Every 5 minutes"
               className="w-full rounded-lg border border-strong bg-white px-3 py-2 text-xs outline-none focus:border-accent"
             />
-          </Field>
-
-          <Field label="Project (optional)">
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="w-full rounded-lg border border-strong bg-white px-3 py-2 text-xs outline-none focus:border-accent"
-            >
-              <option value="">— none —</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
           </Field>
 
           {error ? (

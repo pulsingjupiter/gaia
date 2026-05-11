@@ -7,7 +7,7 @@
  * transient failure on one source doesn't blank the rest of the tab:
  *
  *   1. /api/runs?employee_id=…&limit=20    → recent runs (live + history tail)
- *   2. /api/tasks?cron_only=1&employee_id= → enabled cron tasks for this agent
+ *   2. /api/scheduled-runs?enabled=1&…     → enabled cron-fired runs here
  *   3. /api/backlog?employee_id=…          → backlog tasks assigned here
  *   4. /api/approvals?status=pending&…     → pending approvals
  *   5. /api/messages?threads=1             → all threads, filtered to ones
@@ -23,9 +23,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { RunRow } from "@/lib/hooks/use-agent-detail";
-import type { TaskRow } from "@/lib/hooks/use-cron-tasks";
+import type { ScheduledRunRow } from "@/lib/hooks/use-scheduled-runs";
 import type { ApprovalRow } from "@/lib/hooks/use-approvals";
 import type { ThreadSummary } from "@/lib/hooks/use-conversations";
+
+// Work tasks still live in the `tasks` table; this hook reads them via
+// /api/backlog (which already filters status='backlog' by default).
+type TaskRow = {
+  id: string;
+  title: string;
+  employee_id: string | null;
+  priority: "high" | "medium" | "low";
+  status:
+    | "backlog"
+    | "todo"
+    | "in_progress"
+    | "review"
+    | "done"
+    | "archived";
+  description: string | null;
+  project_id: string | null;
+};
 
 const POLL_MS = 10_000;
 const ACTIVE_THREAD_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -39,8 +57,8 @@ export type UseAgentWorkload = {
    * runs that are still in flight (treated as live activity).
    */
   recentLastActivity: number | null;
-  /** Enabled cron tasks owned by this agent. */
-  scheduled: TaskRow[];
+  /** Enabled cron-fired scheduled runs owned by this agent. */
+  scheduled: ScheduledRunRow[];
   /** Backlog tasks (status='backlog') assigned to this agent. */
   backlog: TaskRow[];
   /** Pending approvals scoped to this agent. */
@@ -65,7 +83,7 @@ export function useAgentWorkload(
   const [recentLastActivity, setRecentLastActivity] = useState<number | null>(
     null,
   );
-  const [scheduled, setScheduled] = useState<TaskRow[]>([]);
+  const [scheduled, setScheduled] = useState<ScheduledRunRow[]>([]);
   const [backlog, setBacklog] = useState<TaskRow[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRow[]>([]);
   const [activeThreads, setActiveThreads] = useState<ThreadSummary[]>([]);
@@ -88,14 +106,14 @@ export function useAgentWorkload(
     const id = encodeURIComponent(agentId);
     const cutoff = Date.now() - ACTIVE_THREAD_WINDOW_MS;
 
-    const [runsRes, tasksRes, backlogRes, approvalsRes, threadsRes] =
+    const [runsRes, scheduledRes, backlogRes, approvalsRes, threadsRes] =
       await Promise.allSettled([
         getJson<{ runs?: RunRow[] }>(`/api/runs?employee_id=${id}&limit=20`),
-        // The /api/tasks?cron_only=1 endpoint already filters to rows with a
-        // non-empty schedule_cron. We narrow further to enabled rows here so
-        // the SCHEDULED card only surfaces autonomy that's actually armed.
-        getJson<{ tasks?: TaskRow[] }>(
-          `/api/tasks?cron_only=1&employee_id=${id}`,
+        // The /api/scheduled-runs endpoint owns cron-fired autonomy after the
+        // cron-split migration. We narrow to enabled rows here so the
+        // SCHEDULED card only surfaces autonomy that's actually armed.
+        getJson<{ scheduled_runs?: ScheduledRunRow[] }>(
+          `/api/scheduled-runs?enabled=1&employee_id=${id}`,
         ),
         getJson<{ tasks?: TaskRow[] }>(`/api/backlog?employee_id=${id}`),
         getJson<{ approvals?: ApprovalRow[] }>(
@@ -125,9 +143,9 @@ export function useAgentWorkload(
       setRecentLastActivity(latest);
     }
 
-    // Scheduled (cron) tasks ────────────────────────────────────────────────
-    if (tasksRes.status === "fulfilled") {
-      const all = tasksRes.value.tasks ?? [];
+    // Scheduled (cron) runs ─────────────────────────────────────────────────
+    if (scheduledRes.status === "fulfilled") {
+      const all = scheduledRes.value.scheduled_runs ?? [];
       setScheduled(
         all.filter(
           (t) =>
@@ -178,7 +196,7 @@ export function useAgentWorkload(
     // Surface the first failure (if any) without blocking partial results.
     const firstReject = [
       runsRes,
-      tasksRes,
+      scheduledRes,
       backlogRes,
       approvalsRes,
       threadsRes,

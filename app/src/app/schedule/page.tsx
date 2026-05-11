@@ -1,8 +1,8 @@
 "use client";
 /**
- * /schedule — single-purpose surface for cron-fired tasks.
+ * /schedule — single-purpose surface for cron-fired autonomous runs.
  *
- * Two stacked sections, both fed from the live `tasks` table:
+ * Two stacked sections, both fed from the live `scheduled_runs` table:
  *   1. Scheduled Tasks  — full management table (toggle / edit / delete).
  *   2. Upcoming Fires    — next-24h chronological preview of when each
  *                          enabled task will fire next.
@@ -19,31 +19,35 @@ import { CronTaskRow } from "@/components/schedule/cron-task-row";
 import { AddCronTaskModal } from "@/components/schedule/add-cron-task-modal";
 import { UpcomingFires } from "@/components/schedule/upcoming-fires";
 import { MorningBriefingCta } from "@/components/schedule/morning-briefing-cta";
-import { useCronTasks, type TaskRow } from "@/lib/hooks/use-cron-tasks";
+import {
+  useScheduledRuns,
+  type ScheduledRunRow,
+} from "@/lib/hooks/use-scheduled-runs";
 import { useEmployees } from "@/components/employees/employees-context";
 import { useProjects } from "@/lib/hooks/use-projects";
 
 export default function SchedulePage() {
-  const { tasks, loading, toggle, add, update, remove, refresh } = useCronTasks();
+  const { scheduledRuns, loading, toggle, add, update, remove, refresh } =
+    useScheduledRuns();
   const { employees } = useEmployees();
   const { projects } = useProjects();
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+  const [editingRun, setEditingRun] = useState<ScheduledRunRow | null>(null);
 
   const employeeById = new Map(employees.map((e) => [e.id, e]));
 
   const closeModal = () => {
     setModalOpen(false);
-    setEditingTask(null);
+    setEditingRun(null);
   };
 
   const openCreate = () => {
-    setEditingTask(null);
+    setEditingRun(null);
     setModalOpen(true);
   };
 
-  const openEdit = (task: TaskRow) => {
-    setEditingTask(task);
+  const openEdit = (run: ScheduledRunRow) => {
+    setEditingRun(run);
     setModalOpen(true);
   };
 
@@ -66,7 +70,7 @@ export default function SchedulePage() {
 
       {/* MORNING BRIEFING — autonomy demo CTA, hides itself once all 5 exist */}
       <MorningBriefingCta
-        taskIds={tasks.map((t) => t.id)}
+        taskIds={scheduledRuns.map((t) => t.id)}
         onCreated={refresh}
       />
 
@@ -84,11 +88,11 @@ export default function SchedulePage() {
           </button>
         </div>
         <div className="card-surface overflow-hidden">
-          {loading && tasks.length === 0 ? (
+          {loading && scheduledRuns.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-muted">
               Loading scheduled tasks…
             </div>
-          ) : tasks.length === 0 ? (
+          ) : scheduledRuns.length === 0 ? (
             <div className="px-4 py-8 text-center">
               <div className="text-sm font-medium text-primary">
                 No scheduled tasks
@@ -119,13 +123,13 @@ export default function SchedulePage() {
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => (
+                {scheduledRuns.map((run) => (
                   <CronTaskRow
-                    key={task.id}
-                    task={task}
+                    key={run.id}
+                    run={run}
                     employee={
-                      task.employee_id
-                        ? employeeById.get(task.employee_id)
+                      run.employee_id
+                        ? employeeById.get(run.employee_id)
                         : undefined
                     }
                     onToggle={(id, enabled) => {
@@ -148,14 +152,14 @@ export default function SchedulePage() {
         <div className="mb-2 flex items-end justify-between">
           <div className="section-header">Upcoming fires (next 24h)</div>
         </div>
-        <UpcomingFires tasks={tasks} />
+        <UpcomingFires runs={scheduledRuns} />
       </section>
 
       <AddCronTaskModal
         open={modalOpen}
         employees={employees}
         projects={projects}
-        editingTask={editingTask}
+        editingRun={editingRun}
         onClose={closeModal}
         onCreate={add}
         onUpdate={update}

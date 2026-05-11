@@ -5,9 +5,9 @@
  * Renders an enable/disable switch (writes immediately), the agent owner
  * (avatar + name), the human-friendly schedule, and last-run metadata.
  *
- * Edit opens the parent's modal in edit mode (parent owns `editingTask`
- * state). Delete uses an INLINE TWO-STEP CONFIRM pattern — first click swaps
- * the trash icon to a red checkmark labelled "Confirm" for ~3s, second click
+ * Edit opens the parent's modal in edit mode (parent owns `editingRun` state).
+ * Delete uses an INLINE TWO-STEP CONFIRM pattern — first click swaps the
+ * trash icon to a red checkmark labelled "Confirm" for ~3s, second click
  * commits the DELETE. Click outside or wait out the timer to abort. This
  * keeps the action discoverable but undo-able without a modal interrupt.
  */
@@ -16,18 +16,18 @@ import { Check, Pencil, PlayCircle, Trash2 } from "lucide-react";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { cn } from "@/lib/cn";
 import type { Employee } from "@/lib/types";
-import type { TaskRow } from "@/lib/hooks/use-cron-tasks";
+import type { ScheduledRunRow } from "@/lib/hooks/use-scheduled-runs";
 
 export type CronTaskRowProps = {
-  task: TaskRow;
+  run: ScheduledRunRow;
   employee: Employee | undefined;
   onToggle: (id: string, enabled: boolean) => void;
-  onEdit?: (task: TaskRow) => void;
+  onEdit?: (run: ScheduledRunRow) => void;
   onDelete?: (id: string) => void;
   /**
    * Optional callback fired ~1s after a successful manual run kick-off, so the
-   * parent can refresh the cron tasks list (and pick up the updated
-   * `last_run_at`). Falls back to the 30s poll if not provided.
+   * parent can refresh the list (and pick up the updated `last_run_at`).
+   * Falls back to the 30s poll if not provided.
    */
   onFired?: (id: string) => void;
 };
@@ -35,17 +35,22 @@ export type CronTaskRowProps = {
 const CONFIRM_TIMEOUT_MS = 3000;
 const FIRED_BADGE_MS = 2000;
 
+function titleFor(run: ScheduledRunRow): string {
+  return (run.human_label && run.human_label.trim()) || run.id;
+}
+
 export function CronTaskRow({
-  task,
+  run,
   employee,
   onToggle,
   onEdit,
   onDelete,
   onFired,
 }: CronTaskRowProps) {
-  const enabled = task.enabled === 1;
-  const scheduleLabel = describeSchedule(task);
-  const lastRun = task.last_run_at ? formatRelative(task.last_run_at) : null;
+  const enabled = run.enabled === 1;
+  const scheduleLabel = describeSchedule(run);
+  const lastRun = run.last_run_at ? formatRelative(run.last_run_at) : null;
+  const title = titleFor(run);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,10 +62,10 @@ export function CronTaskRow({
   const firedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canRunNow = Boolean(task.employee_id && task.skill);
+  const canRunNow = Boolean(run.employee_id && run.skill);
   const runNowDisabled = !canRunNow || firing;
   const runNowTitle = !canRunNow
-    ? "Task missing agent or skill"
+    ? "Run missing agent or skill"
     : firing
       ? "Firing…"
       : "Run once now";
@@ -78,7 +83,7 @@ export function CronTaskRow({
     setFiring(true);
     try {
       const res = await fetch(
-        `/api/tasks/${encodeURIComponent(task.id)}/run-now`,
+        `/api/scheduled-runs/${encodeURIComponent(run.id)}/run-now`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -86,9 +91,7 @@ export function CronTaskRow({
         },
       );
       if (!res.ok) {
-        // Swallow + log — surfacing a toast is the parent page's job once 5D
-        // wires it. For now the button just stops showing "Firing".
-        console.error("[run-now] failed", task.id, res.status);
+        console.error("[run-now] failed", run.id, res.status);
         return;
       }
       setFired(true);
@@ -98,17 +101,17 @@ export function CronTaskRow({
         firedTimerRef.current = null;
       }, FIRED_BADGE_MS);
 
-      // Force a refresh ~1s after the kick-off — the run row + the task's
+      // Force a refresh ~1s after the kick-off — the run row + the row's
       // last_run_at should both have landed by then.
       if (onFired) {
         if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = setTimeout(() => {
-          onFired(task.id);
+          onFired(run.id);
           refreshTimerRef.current = null;
         }, 1000);
       }
     } catch (err) {
-      console.error("[run-now] error", task.id, err);
+      console.error("[run-now] error", run.id, err);
     } finally {
       setFiring(false);
     }
@@ -129,7 +132,7 @@ export function CronTaskRow({
       confirmTimerRef.current = null;
     }
     setConfirmingDelete(false);
-    onDelete(task.id);
+    onDelete(run.id);
   };
 
   return (
@@ -142,8 +145,8 @@ export function CronTaskRow({
       <td className="py-2.5 pl-3 pr-2 align-middle">
         <ToggleSwitch
           checked={enabled}
-          onChange={(next) => onToggle(task.id, next)}
-          ariaLabel={`Toggle ${task.title}`}
+          onChange={(next) => onToggle(run.id, next)}
+          ariaLabel={`Toggle ${title}`}
         />
       </td>
       <td className="py-2.5 pr-3 align-middle">
@@ -153,13 +156,8 @@ export function CronTaskRow({
             !enabled && "text-secondary",
           )}
         >
-          {task.title}
+          {title}
         </div>
-        {task.description ? (
-          <div className="mt-0.5 line-clamp-1 text-[10px] text-muted">
-            {task.description}
-          </div>
-        ) : null}
       </td>
       <td className="py-2.5 pr-3 align-middle">
         {employee ? (
@@ -176,20 +174,20 @@ export function CronTaskRow({
           </div>
         ) : (
           <span className="text-muted">
-            {task.employee_id ?? "—"}
+            {run.employee_id ?? "—"}
           </span>
         )}
       </td>
       <td className="py-2.5 pr-3 align-middle">
         <span className="rounded-md bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] text-secondary">
-          {task.skill ?? "—"}
+          {run.skill ?? "—"}
         </span>
       </td>
       <td className="py-2.5 pr-3 align-middle">
         <div className="text-secondary">{scheduleLabel}</div>
-        {task.schedule_cron && task.schedule_cron !== scheduleLabel ? (
+        {run.schedule_cron && run.schedule_cron !== scheduleLabel ? (
           <div className="mt-0.5 font-mono text-[10px] text-muted">
-            {task.schedule_cron}
+            {run.schedule_cron}
           </div>
         ) : null}
       </td>
@@ -229,7 +227,7 @@ export function CronTaskRow({
           ) : null}
           <button
             type="button"
-            onClick={() => onEdit?.(task)}
+            onClick={() => onEdit?.(run)}
             disabled={!onEdit}
             title="Edit"
             aria-label="Edit"
@@ -255,7 +253,7 @@ export function CronTaskRow({
             disabled={!onDelete}
             title={
               confirmingDelete
-                ? `Confirm delete '${task.title}'`
+                ? `Confirm delete '${title}'`
                 : "Delete permanently"
             }
             aria-label={confirmingDelete ? "Confirm delete" : "Delete"}
@@ -312,14 +310,16 @@ function ToggleSwitch({
 }
 
 /**
- * Convert a TaskRow's schedule into a human-readable string. We prefer the
- * stored `human_label` when present, then attempt to interpret common cron
- * shapes, then fall back to the raw cron expression.
+ * Convert a ScheduledRunRow's schedule into a human-readable string. We
+ * prefer the stored `human_label` when present, then attempt to interpret
+ * common cron shapes, then fall back to the raw cron expression.
  */
-export function describeSchedule(task: Pick<TaskRow, "human_label" | "schedule_cron">): string {
-  if (task.human_label && task.human_label.trim()) return task.human_label.trim();
-  if (!task.schedule_cron) return "—";
-  return describeCron(task.schedule_cron) ?? task.schedule_cron;
+export function describeSchedule(
+  run: Pick<ScheduledRunRow, "human_label" | "schedule_cron">,
+): string {
+  if (run.human_label && run.human_label.trim()) return run.human_label.trim();
+  if (!run.schedule_cron) return "—";
+  return describeCron(run.schedule_cron) ?? run.schedule_cron;
 }
 
 /**

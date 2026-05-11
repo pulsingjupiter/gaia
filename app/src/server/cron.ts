@@ -1,22 +1,25 @@
 /**
- * Cron scheduler for tasks with `schedule_cron`.
+ * Cron scheduler for autonomous scheduled runs.
  *
  * Sync loop (every 30s):
- *   - Pulls all enabled tasks with a non-empty `schedule_cron` + employee_id +
- *     skill from the DB.
- *   - Registers a node-cron job for any new task IDs.
- *   - Stops + drops jobs whose backing task was disabled or removed.
+ *   - Pulls all enabled rows from `scheduled_runs` with employee_id + skill.
+ *   - Registers a node-cron job for any new run IDs.
+ *   - Stops + drops jobs whose backing row was disabled or removed.
  *
  * Each fire calls `startRun({...})` and patches `last_run_id` / `last_run_at`
- * on the task row. Errors are logged, never thrown — a misbehaving cron must
- * not take down the scheduler.
+ * on the scheduled_runs row. Errors are logged, never thrown — a misbehaving
+ * cron must not take down the scheduler.
  *
  * Idempotent boot via globalThis.__gaia_cron_started__.
  */
 import nodeCron, { type ScheduledTask } from "node-cron";
 
 import { startRun } from "./agent-runner.ts";
-import { listAllTasks, updateTask, type TaskRow } from "./db.ts";
+import {
+  listScheduledRuns,
+  updateScheduledRun,
+  type ScheduledRunRow,
+} from "./db.ts";
 
 const GLOBAL_KEY = "__gaia_cron_started__";
 type GlobalWithFlag = typeof globalThis & { [GLOBAL_KEY]?: boolean };
@@ -58,7 +61,7 @@ export function stopCronScheduler(): void {
   _g[GLOBAL_KEY] = false;
 }
 
-function isCronTask(t: TaskRow): boolean {
+function isFireableRun(t: ScheduledRunRow): boolean {
   return Boolean(
     t.enabled &&
       t.schedule_cron &&
@@ -69,34 +72,34 @@ function isCronTask(t: TaskRow): boolean {
 }
 
 function syncSchedules(): void {
-  let tasks: TaskRow[];
+  let runs: ScheduledRunRow[];
   try {
-    tasks = listAllTasks().filter(isCronTask);
+    runs = listScheduledRuns().filter(isFireableRun);
   } catch (err) {
-    console.error("[cron] listAllTasks failed", err);
+    console.error("[cron] listScheduledRuns failed", err);
     return;
   }
 
-  const liveIds = new Set(tasks.map((t) => t.id));
+  const liveIds = new Set(runs.map((t) => t.id));
 
   // Add or replace jobs whose cron expression has changed.
-  for (const task of tasks) {
-    const existing = _jobs.get(task.id);
-    if (existing && existing.cron === task.schedule_cron) continue;
+  for (const run of runs) {
+    const existing = _jobs.get(run.id);
+    if (existing && existing.cron === run.schedule_cron) continue;
 
-    if (!nodeCron.validate(task.schedule_cron!)) {
+    if (!nodeCron.validate(run.schedule_cron)) {
       if (existing) {
         try {
           void existing.job.stop();
         } catch {
           // ignore
         }
-        _jobs.delete(task.id);
+        _jobs.delete(run.id);
       }
       console.warn(
         "[cron] invalid expression — skipping",
-        task.id,
-        task.schedule_cron,
+        run.id,
+        run.schedule_cron,
       );
       continue;
     }
@@ -107,36 +110,36 @@ function syncSchedules(): void {
       } catch {
         // ignore
       }
-      _jobs.delete(task.id);
+      _jobs.delete(run.id);
     }
 
     try {
       const job = nodeCron.schedule(
-        task.schedule_cron!,
+        run.schedule_cron,
         async () => {
           try {
             const { runId } = await startRun({
-              employeeId: task.employee_id!,
-              skill: task.skill!,
-              input: `Scheduled run: ${task.title}`,
+              employeeId: run.employee_id,
+              skill: run.skill!,
+              input: `Scheduled run: ${run.human_label ?? run.id}`,
             });
-            updateTask(task.id, {
+            updateScheduledRun(run.id, {
               last_run_id: runId,
               last_run_at: Date.now(),
             });
           } catch (err) {
-            console.error("[cron] run failed", task.id, err);
+            console.error("[cron] run failed", run.id, err);
           }
         },
-        { name: `gaia-task-${task.id}` },
+        { name: `gaia-task-${run.id}` },
       );
-      _jobs.set(task.id, { job, cron: task.schedule_cron! });
+      _jobs.set(run.id, { job, cron: run.schedule_cron });
     } catch (err) {
-      console.error("[cron] schedule failed", task.id, err);
+      console.error("[cron] schedule failed", run.id, err);
     }
   }
 
-  // Stop jobs whose tasks were disabled / removed.
+  // Stop jobs whose runs were disabled / removed.
   for (const [id, r] of _jobs.entries()) {
     if (liveIds.has(id)) continue;
     try {
