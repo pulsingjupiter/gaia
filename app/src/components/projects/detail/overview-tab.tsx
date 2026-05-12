@@ -542,7 +542,7 @@ function QuickActions({
         onClick={onPlanWithClaude}
         className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
       >
-        <Sparkles size={12} /> Plan with Claude
+        <Sparkles size={12} /> Plan with Gaia
       </button>
       <LaunchAgentHerePicker project={project} />
       <button

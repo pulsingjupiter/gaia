@@ -44,7 +44,7 @@ type Props = {
    */
   onCreated: (project: ProjectRow) => void;
   /**
-   * Called when the user picks "Plan with Claude" on the post-create
+   * Called when the user picks "Plan with Gaia" on the post-create
    * confirmation screen. The parent should open the wizard for `project.id`.
    * When omitted, the post-create prompt's "Plan now" button is hidden.
    */
@@ -178,7 +178,7 @@ export function AddProjectModal({
       }
       const data = (await res.json()) as { project: ProjectRow };
       onCreated(data.project);
-      // Don't close yet — show the post-create "Plan with Claude now?" prompt
+      // Don't close yet — show the post-create "Plan with Gaia now?" prompt
       // so the user has the option to jump straight into the wizard for the
       // freshly-created project. The parent's project list has already been
       // refreshed via `onCreated`.
@@ -247,7 +247,7 @@ export function AddProjectModal({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
                 >
                   <Sparkles size={12} />
-                  Plan with Claude now
+                  Plan with Gaia now
                 </button>
               ) : null}
             </div>

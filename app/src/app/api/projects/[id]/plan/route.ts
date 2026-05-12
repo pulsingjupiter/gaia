@@ -2,17 +2,14 @@
  * POST /api/projects/[id]/plan
  *
  * Composes a project-planning prompt from the wizard inputs and runs it
- * through a headless `claude -p` invocation (the same CLI the agent runner
- * uses, but one-shot — no streaming, no SQLite event log). Tries lenient
- * JSON extraction first; on failure, retries once with a strict
- * "respond ONLY with JSON" preamble.
+ * through the configured default LLM CLI (see `default_llm_cli` setting —
+ * claude / codex / gemini). Tries lenient JSON extraction first; on
+ * failure, retries once with a strict "respond ONLY with JSON" preamble.
  *
- * The user input is passed to the CLI via stdin (and CLI flag `--prompt-stdin`
- * is achieved by piping into stdin and using `-p -`). Args carry only the
- * flags themselves so shell metacharacters in the goal/scope/etc can never
- * land in the argv.
+ * The CLI is invoked via `spawn` with an argv array (NOT a shell command
+ * string) inside `server/planner.ts`, so shell metacharacters in the
+ * goal/scope/etc. cannot be reinterpreted.
  */
-import { spawn } from "node:child_process";
 import type { NextRequest } from "next/server";
 
 import {
@@ -25,6 +22,7 @@ import {
   type ProjectRow,
   type TaskRow,
 } from "@/server/db.ts";
+import { extractJson, runPlanner } from "@/server/planner.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 
 export const runtime = "nodejs";
@@ -32,8 +30,6 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-const CLAUDE_BIN = process.env.GAIA_CLAUDE_BIN ?? "claude";
-const TIMEOUT_MS = 120_000;
 const RAW_TRUNCATE = 16_000;
 
 type DetailLevel = "milestones" | "balanced" | "detailed";
@@ -193,222 +189,6 @@ const STRICT_PREAMBLE = [
   ``,
 ].join("\n");
 
-type ClaudeRunResult =
-  | { kind: "ok"; stdout: string }
-  | { kind: "timeout" }
-  | { kind: "missing" }
-  | { kind: "empty" }
-  | { kind: "error"; message: string };
-
-/**
- * Run `claude -p` and read its stdout. The user prompt is passed as a single
- * argv string — but it's NOT interpreted by a shell here (we use `spawn` with
- * argv array, not `exec` with a command string), so shell metacharacters in
- * the prompt are safe. We do NOT use stdin because the CLI's `-p` flag
- * expects the prompt inline as an argument.
- *
- * Tools are disabled via `--tools ""` (per `claude --help`: 'Use "" to
- * disable all tools'). This route only needs Claude to emit JSON text — it
- * must NEVER run bash, edit files, or fetch URLs. We previously used
- * `--dangerously-skip-permissions` which is unsafe and unnecessary for a
- * text-only response.
- *
- * `env` is restricted to a minimal allowlist so we don't leak arbitrary
- * shell vars into the Claude process.
- */
-const CLAUDE_ENV_ALLOWLIST = [
-  "HOME",
-  "PATH",
-  "USER",
-  "LOGNAME",
-  "LANG",
-  "LC_ALL",
-  "LC_CTYPE",
-  "SHELL",
-  "TMPDIR",
-  // Anthropic auth / config
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_AUTH_TOKEN",
-  "ANTHROPIC_BASE_URL",
-  "ANTHROPIC_MODEL",
-  "CLAUDE_CONFIG_DIR",
-  // Cloud provider auth (Bedrock/Vertex) — pass through if set
-  "AWS_REGION",
-  "AWS_PROFILE",
-  "GOOGLE_APPLICATION_CREDENTIALS",
-  "GCP_PROJECT_ID",
-] as const;
-
-function buildClaudeEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const k of CLAUDE_ENV_ALLOWLIST) {
-    const v = process.env[k];
-    if (typeof v === "string") out[k] = v;
-  }
-  return out;
-}
-
-function runClaude(prompt: string, cwd: string): Promise<ClaudeRunResult> {
-  return new Promise((resolve) => {
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn(
-        CLAUDE_BIN,
-        [
-          "-p",
-          prompt,
-          // Disable all built-in tools — this route only wants a JSON text
-          // response. Per `claude --help`: '--tools ... Use "" to disable
-          // all tools, "default" to use all tools'.
-          "--tools",
-          "",
-          // Force plain text output (we parse JSON out of stdout ourselves)
-          // and skip session persistence so the plan call doesn't pollute
-          // ~/.claude/projects/ with a transcript per run.
-          "--output-format",
-          "text",
-          "--no-session-persistence",
-        ],
-        {
-          cwd,
-          env: buildClaudeEnv() as NodeJS.ProcessEnv,
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      );
-    } catch (err) {
-      const code = (err as { code?: string } | null)?.code;
-      if (code === "ENOENT") {
-        resolve({ kind: "missing" });
-        return;
-      }
-      resolve({
-        kind: "error",
-        message: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
-
-    let stdout = "";
-    let stderr = "";
-    let finished = false;
-
-    const timer = setTimeout(() => {
-      if (finished) return;
-      finished = true;
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        // ignore
-      }
-      resolve({ kind: "timeout" });
-    }, TIMEOUT_MS);
-
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (c: string) => {
-      stdout += c;
-    });
-    child.stderr?.on("data", (c: string) => {
-      stderr += c;
-    });
-
-    child.on("error", (err: NodeJS.ErrnoException) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      if (err.code === "ENOENT") {
-        resolve({ kind: "missing" });
-        return;
-      }
-      resolve({ kind: "error", message: err.message });
-    });
-
-    child.on("close", (code) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      if (code !== 0 && !stdout.trim()) {
-        if (!stderr.trim()) {
-          resolve({ kind: "empty" });
-          return;
-        }
-        resolve({
-          kind: "error",
-          message: stderr.trim().slice(0, 2000),
-        });
-        return;
-      }
-      if (!stdout.trim()) {
-        resolve({ kind: "empty" });
-        return;
-      }
-      resolve({ kind: "ok", stdout });
-    });
-  });
-}
-
-/**
- * Lenient JSON extraction. Tries:
- *  1. Direct parse of the trimmed string.
- *  2. Strip ``` fences (json or plain) then parse.
- *  3. Find the outermost balanced `{...}` block in the output and parse.
- * Returns the parsed object, or null on failure.
- */
-function extractJson(raw: string): unknown {
-  const trimmed = raw.trim();
-  // 1) direct
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    // continue
-  }
-  // 2) fenced
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence && fence[1]) {
-    try {
-      return JSON.parse(fence[1].trim());
-    } catch {
-      // continue
-    }
-  }
-  // 3) outermost balanced object
-  const start = trimmed.indexOf("{");
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < trimmed.length; i++) {
-    const ch = trimmed[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-      } else if (ch === "\\") {
-        escape = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        const slice = trimmed.slice(start, i + 1);
-        try {
-          return JSON.parse(slice);
-        } catch {
-          return null;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 function normalisePriority(v: unknown): "low" | "medium" | "high" {
   if (v === "low" || v === "medium" || v === "high") return v;
   return "medium";
@@ -559,15 +339,14 @@ export async function POST(
   const cwd = project.path;
 
   // First attempt — lenient prompt.
-  const first = await runClaude(basePrompt, cwd);
+  const first = await runPlanner(basePrompt, cwd);
   if (first.kind === "missing") {
     return Response.json(
       {
-        error: "claude CLI not found",
-        install_hint:
-          "Install Claude Code: npm install -g @anthropic-ai/claude-code",
+        error: `${first.cli} CLI not found`,
+        install_hint: first.installHint,
       },
-      { status: 500 },
+      { status: 503 },
     );
   }
   if (first.kind === "timeout") {
@@ -581,15 +360,14 @@ export async function POST(
   if (first.kind === "empty") {
     return Response.json(
       {
-        error:
-          "Claude returned no output. Make sure you're logged in (run: claude login).",
+        error: `${first.cli} returned no output. Make sure you're logged in to the ${first.cli} CLI.`,
       },
       { status: 500 },
     );
   }
   if (first.kind === "error") {
     return Response.json(
-      { error: `claude failed: ${first.message}` },
+      { error: `${first.cli} failed: ${first.message}` },
       { status: 500 },
     );
   }
@@ -599,7 +377,7 @@ export async function POST(
 
   if (!proposal) {
     const strictPrompt = `${STRICT_PREAMBLE}${basePrompt}`;
-    const second = await runClaude(strictPrompt, cwd);
+    const second = await runPlanner(strictPrompt, cwd, first.cli);
     if (second.kind === "ok") {
       combinedRaw = `${first.stdout}\n--- retry ---\n${second.stdout}`;
       proposal = validateProposal(extractJson(second.stdout));
@@ -613,11 +391,10 @@ export async function POST(
     } else if (second.kind === "missing") {
       return Response.json(
         {
-          error: "claude CLI not found",
-          install_hint:
-            "Install Claude Code: npm install -g @anthropic-ai/claude-code",
+          error: `${second.cli} CLI not found`,
+          install_hint: second.installHint,
         },
-        { status: 500 },
+        { status: 503 },
       );
     }
   }
@@ -625,7 +402,7 @@ export async function POST(
   if (!proposal) {
     return Response.json({
       ok: false,
-      error: "Could not parse plan from Claude's response",
+      error: `Could not parse plan from ${first.cli}'s response`,
       raw: combinedRaw.slice(0, RAW_TRUNCATE),
     });
   }

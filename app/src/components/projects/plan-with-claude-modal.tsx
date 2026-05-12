@@ -1,9 +1,13 @@
 "use client";
 /**
  * PlanWithClaudeModal — 5-step wizard that takes a project goal/scope/team
- * and asks the headless Claude CLI to generate a milestone+task plan. After
- * generation the modal swaps to a review state where the user can edit
- * individual milestones/tasks before applying them.
+ * and asks the headless LLM CLI (Gaia's default planner) to generate a
+ * milestone+task plan. After generation the modal swaps to a review state
+ * where the user can edit individual milestones/tasks before applying them.
+ *
+ * Despite the file name, the user-facing label is "Plan with Gaia" — the
+ * actual CLI invoked (claude / codex / gemini) is selected by the user's
+ * `default_llm_cli` setting.
  *
  * Driven by an in-component `step` state. Steps 1-5 collect input; the
  * `review` step renders the proposal returned by `/api/projects/[id]/plan`;
@@ -202,7 +206,7 @@ export function PlanWithClaudeModal({
         return;
       }
       setRawOutput(typeof data.raw === "string" ? data.raw : "");
-      setErrorMsg(data.error ?? "Could not parse plan from Claude's response");
+      setErrorMsg(data.error ?? "Could not parse plan from the planner's response");
       setStep("raw-fallback");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -428,7 +432,7 @@ function Header({
         </div>
         <div className="min-w-0">
           <div className="text-sm font-semibold text-primary">
-            Plan with Claude
+            Plan with Gaia
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted">
             <span>{stepLabel}</span>
@@ -567,7 +571,7 @@ function Footer({
           className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           <Sparkles size={12} />
-          Generate plan with Claude
+          Generate plan with Gaia
         </button>
       ) : (
         <button
@@ -715,7 +719,7 @@ function Step4Team({
   return (
     <Panel
       title="Who's on this team?"
-      hint="At least one person required. Claude will assign tasks accordingly."
+      hint="At least one person required. Gaia will assign tasks accordingly."
     >
       <div className="space-y-2">
         <TeamRow
@@ -805,7 +809,7 @@ function Step5Detail({
   installHint: string | null;
 }) {
   return (
-    <Panel title="How much detail should Claude generate?">
+    <Panel title="How much detail should Gaia generate?">
       <div className="space-y-2">
         <DetailOption
           value="milestones"
@@ -900,7 +904,7 @@ function GeneratingPanel() {
     <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
       <Loader2 size={28} className="animate-spin text-accent" />
       <div className="text-sm font-medium text-primary">
-        Claude is drafting your plan…
+        Gaia is drafting your plan…
       </div>
       <div className="max-w-sm text-xs text-muted">
         This usually takes 30–60 seconds. Keep this window open.
@@ -992,7 +996,7 @@ function ReviewPanel({
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-subtle bg-surface-muted px-3 py-2 text-xs text-secondary">
-        Claude proposes <strong>{proposal.milestones.length}</strong>{" "}
+        Gaia proposes <strong>{proposal.milestones.length}</strong>{" "}
         milestone{proposal.milestones.length === 1 ? "" : "s"},{" "}
         <strong>{total}</strong> task{total === 1 ? "" : "s"}. Edit or remove
         anything below before applying.
@@ -1350,11 +1354,11 @@ function RawFallbackPanel({
     <div className="space-y-3">
       <div className="rounded-lg border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error">
         <div className="font-semibold">
-          Couldn&apos;t auto-parse Claude&apos;s response
+          Couldn&apos;t auto-parse the planner&apos;s response
         </div>
         {errorMsg ? <div className="mt-1 text-[11px]">{errorMsg}</div> : null}
       </div>
-      <div className="text-xs text-secondary">Claude&apos;s raw output:</div>
+      <div className="text-xs text-secondary">Planner&apos;s raw output:</div>
       <pre className="max-h-[40vh] overflow-auto rounded-lg border border-subtle bg-surface-muted px-3 py-2 font-mono text-[11px] text-primary whitespace-pre-wrap">
         {raw || "(no output captured)"}
       </pre>
@@ -1394,7 +1398,7 @@ function ConfirmCancel({
       >
         <h3 className="text-sm font-semibold text-primary">Discard plan?</h3>
         <p className="mt-1 text-xs text-secondary">
-          You&apos;ll lose the proposal Claude generated. The project itself
+          You&apos;ll lose the proposal Gaia generated. The project itself
           is unchanged.
         </p>
         <div className="mt-3 flex justify-end gap-2">

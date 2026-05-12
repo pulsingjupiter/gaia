@@ -127,7 +127,7 @@ export function ProjectHeader({
             className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted"
           >
             <Sparkles size={12} />
-            Plan with Claude
+            Plan with Gaia
           </button>
         ) : null}
         <button
