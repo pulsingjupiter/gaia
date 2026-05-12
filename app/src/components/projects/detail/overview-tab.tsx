@@ -21,6 +21,7 @@ import {
   Plus,
   Play,
   Sparkles,
+  Wand2,
 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -42,6 +43,7 @@ type Props = {
   update: UseProjectDetail["update"];
   onPlanWithClaude: () => void;
   onAddTask: () => void;
+  onAssess: () => void;
   onSwitchTab: (tab: "milestones" | "sessions") => void;
 };
 
@@ -108,6 +110,7 @@ export function OverviewTab({
   update,
   onPlanWithClaude,
   onAddTask,
+  onAssess,
   onSwitchTab,
 }: Props) {
   const { milestones, loading: milestonesLoading } = useMilestones(project.id);
@@ -132,6 +135,7 @@ export function OverviewTab({
   const [taskCounts, setTaskCounts] = useState<
     Record<string, { total: number; done: number }>
   >({});
+  const [totalTasks, setTotalTasks] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,7 +151,8 @@ export function OverviewTab({
         };
         if (cancelled) return;
         const map: Record<string, { total: number; done: number }> = {};
-        for (const t of data.tasks ?? []) {
+        const all = data.tasks ?? [];
+        for (const t of all) {
           if (!t.milestone_id) continue;
           const cur = map[t.milestone_id] ?? { total: 0, done: 0 };
           cur.total += 1;
@@ -155,6 +160,7 @@ export function OverviewTab({
           map[t.milestone_id] = cur;
         }
         setTaskCounts(map);
+        setTotalTasks(all.length);
       } catch {
         // ignore
       }
@@ -164,8 +170,35 @@ export function OverviewTab({
     };
   }, [project.id, milestones]);
 
+  // Show the Assess hint only when the project looks brand-new: no
+  // description, no milestones, no tasks. Tasks fetch is async so we
+  // require it to have resolved before evaluating.
+  const showAssessHint =
+    (!project.description || project.description.trim().length === 0) &&
+    milestones.length === 0 &&
+    totalTasks === 0;
+
   return (
     <div className="space-y-6">
+      {showAssessHint ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-subtle bg-accent-soft/40 px-3 py-2 text-xs text-secondary">
+          <span>
+            New project? Try{" "}
+            <span className="font-semibold text-primary">Gaia AI Assess</span>{" "}
+            to auto-fill the description, milestones, and tasks from files +
+            sessions.
+          </span>
+          <button
+            type="button"
+            onClick={onAssess}
+            className="inline-flex items-center gap-1.5 rounded-md border border-strong bg-white px-2.5 py-1 text-[11px] font-semibold text-secondary hover:bg-surface-muted"
+          >
+            <Wand2 size={11} />
+            Run Assess
+          </button>
+        </section>
+      ) : null}
+
       <DescriptionBlock project={project} update={update} />
 
       <section>
@@ -196,6 +229,7 @@ export function OverviewTab({
         project={project}
         onPlanWithClaude={onPlanWithClaude}
         onAddTask={onAddTask}
+        onAssess={onAssess}
       />
 
       <DetailsFooter project={project} />
@@ -530,10 +564,12 @@ function QuickActions({
   project,
   onPlanWithClaude,
   onAddTask,
+  onAssess,
 }: {
   project: ProjectRow;
   onPlanWithClaude: () => void;
   onAddTask: () => void;
+  onAssess: () => void;
 }) {
   return (
     <section className="flex flex-wrap items-center gap-2">
@@ -543,6 +579,13 @@ function QuickActions({
         className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
       >
         <Sparkles size={12} /> Plan with Gaia
+      </button>
+      <button
+        type="button"
+        onClick={onAssess}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-muted"
+      >
+        <Wand2 size={12} /> Gaia AI Assess
       </button>
       <LaunchAgentHerePicker project={project} />
       <button

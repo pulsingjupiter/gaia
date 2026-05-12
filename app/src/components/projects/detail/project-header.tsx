@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { Archive, ChevronRight, MoreHorizontal, Pencil, Sparkles } from "lucide-react";
+import { Archive, ChevronRight, MoreHorizontal, Pencil, Sparkles, Wand2 } from "lucide-react";
 
 import { IconGlyph } from "../icon-glyph";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
@@ -17,6 +17,7 @@ type Props = {
   onEdit: () => void;
   onArchive: () => void;
   onPlanWithClaude?: () => void;
+  onAssess?: () => void;
 };
 
 const DEFAULT_COLOR = "#5B5BD6";
@@ -46,6 +47,7 @@ export function ProjectHeader({
   onEdit,
   onArchive,
   onPlanWithClaude,
+  onAssess,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const color = project.color ?? DEFAULT_COLOR;
@@ -128,6 +130,17 @@ export function ProjectHeader({
           >
             <Sparkles size={12} />
             Plan with Gaia
+          </button>
+        ) : null}
+        {onAssess ? (
+          <button
+            type="button"
+            onClick={onAssess}
+            title="Auto-assess this project from files + sessions"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted"
+          >
+            <Wand2 size={12} />
+            Gaia AI Assess
           </button>
         ) : null}
         <button

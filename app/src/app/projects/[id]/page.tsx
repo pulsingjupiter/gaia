@@ -29,6 +29,7 @@ import { BacklogTab } from "@/components/projects/detail/backlog-tab";
 import { FilesTab } from "@/components/projects/detail/files-tab";
 import { SettingsTab } from "@/components/projects/detail/settings-tab";
 import { PlanWithClaudeModal } from "@/components/projects/plan-with-claude-modal";
+import { GaiaAiAssessModal } from "@/components/projects/gaia-ai-assess-modal";
 import { AddTaskModal } from "@/components/tasks/add-task-modal";
 
 type TabId =
@@ -73,6 +74,7 @@ export default function ProjectDetailPage({
   const [planOpen, setPlanOpen] = useState(false);
   const [planNonce, setPlanNonce] = useState(0);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [assessOpen, setAssessOpen] = useState(false);
 
   const setTab = useCallback(
     (next: TabId) => {
@@ -139,6 +141,7 @@ export default function ProjectDetailPage({
         onEdit={() => setTab("settings")}
         onArchive={() => setArchiveConfirm(true)}
         onPlanWithClaude={() => setPlanOpen(true)}
+        onAssess={() => setAssessOpen(true)}
       />
 
       <div className="border-b border-subtle">
@@ -174,6 +177,7 @@ export default function ProjectDetailPage({
             update={detail.update}
             onPlanWithClaude={() => setPlanOpen(true)}
             onAddTask={() => setAddTaskOpen(true)}
+            onAssess={() => setAssessOpen(true)}
             onSwitchTab={(next) => setTab(next)}
           />
         ) : tab === "sessions" ? (
@@ -217,6 +221,19 @@ export default function ProjectDetailPage({
         onApplied={() => {
           setPlanNonce((n) => n + 1);
           setTab("milestones");
+        }}
+      />
+
+      <GaiaAiAssessModal
+        open={assessOpen}
+        projectId={project.id}
+        projectName={project.name}
+        onClose={() => setAssessOpen(false)}
+        onApplied={() => {
+          setAssessOpen(false);
+          setPlanNonce((n) => n + 1);
+          // Pull a fresh project row so the updated description is visible.
+          void detail.refresh();
         }}
       />
 
