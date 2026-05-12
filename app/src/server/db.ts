@@ -12,6 +12,7 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 
 import { DEFAULT_EMPLOYEES } from "../lib/mock/employees.ts";
+import { isPlannerCli, type PlannerCli } from "../lib/types.ts";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -2469,6 +2470,28 @@ export function getAllSettings(): Record<string, unknown> {
     }
   }
   return out;
+}
+
+/**
+ * Default LLM CLI used by Plan with Gaia / Gaia AI Assess. Stored as a
+ * single string under the `default_llm_cli` key in the settings table.
+ * Falls back to "claude" when unset or invalid.
+ */
+const DEFAULT_LLM_CLI_KEY = "default_llm_cli";
+
+export function getDefaultLlmCli(): PlannerCli {
+  const raw = getSetting<unknown>(DEFAULT_LLM_CLI_KEY);
+  if (isPlannerCli(raw)) return raw;
+  return "claude";
+}
+
+export function setDefaultLlmCli(value: PlannerCli): void {
+  if (!isPlannerCli(value)) {
+    throw new Error(
+      `default_llm_cli must be 'claude' | 'codex' | 'gemini' (got ${String(value)})`,
+    );
+  }
+  setSetting(DEFAULT_LLM_CLI_KEY, value);
 }
 
 // ---------------------------------------------------------------------------

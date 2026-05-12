@@ -8,6 +8,7 @@ import type { LucideIcon } from "lucide-react";
 export type SettingsSectionId =
   | "profile"
   | "agents"
+  | "planner"
   | "projects"
   | "terminal"
   | "hooks"

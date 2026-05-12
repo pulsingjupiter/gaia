@@ -37,6 +37,23 @@ export function isEmployeeRuntime(v: unknown): v is EmployeeRuntime {
   return v === "claude" || v === "jules" || v === "codex" || v === "gemini";
 }
 
+/**
+ * Subset of EmployeeRuntime that can drive Gaia's headless planner /
+ * assess flows. Jules is excluded — it's async-cloud and not a fit for
+ * synchronous "give me JSON now" calls.
+ */
+export type PlannerCli = "claude" | "codex" | "gemini";
+
+export const PLANNER_CLI_VALUES: readonly PlannerCli[] = [
+  "claude",
+  "codex",
+  "gemini",
+] as const;
+
+export function isPlannerCli(v: unknown): v is PlannerCli {
+  return v === "claude" || v === "codex" || v === "gemini";
+}
+
 export type Employee = {
   id: string;
   slug: string; // url-friendly
