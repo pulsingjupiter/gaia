@@ -43,7 +43,7 @@ type TabId =
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: Layout },
   { id: "milestones", label: "Milestones", icon: Flag },
-  { id: "backlog", label: "Backlog", icon: ListTodo },
+  { id: "backlog", label: "Tasks", icon: ListTodo },
   { id: "sessions", label: "Sessions", icon: Activity },
   { id: "files", label: "Files", icon: FileText },
   { id: "settings", label: "Settings", icon: SettingsIcon },

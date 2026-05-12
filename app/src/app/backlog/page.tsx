@@ -1,12 +1,7 @@
-import { ListTodo } from "lucide-react";
-import { ComingSoon } from "@/components/shell/coming-soon";
+import { redirect } from "next/navigation";
 
+// The standalone /backlog page was renamed to /tasks. Keep this route as a
+// permanent redirect so old links and bookmarks land on the canonical URL.
 export default function BacklogPage() {
-  return (
-    <ComingSoon
-      title="Backlog"
-      subtitle="Capture, prioritize, and groom upcoming work for your AI workforce."
-      icon={ListTodo}
-    />
-  );
+  redirect("/tasks");
 }

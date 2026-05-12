@@ -168,7 +168,7 @@ export function WorkloadTab({ employee }: { employee: EmployeeRow }) {
       </Card>
 
       {/* Card 3 — BACKLOG */}
-      <Card title="Backlog" icon={Inbox} count={workload.backlog.length}>
+      <Card title="Tasks" icon={Inbox} count={workload.backlog.length}>
         {workload.backlog.length > 0 ? (
           <ul className="divide-y divide-subtle">
             {workload.backlog.map((task) => {
@@ -220,7 +220,7 @@ export function WorkloadTab({ employee }: { employee: EmployeeRow }) {
             })}
           </ul>
         ) : (
-          <Empty>No backlog tasks assigned.</Empty>
+          <Empty>No tasks assigned.</Empty>
         )}
       </Card>
 

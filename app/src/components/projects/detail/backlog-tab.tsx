@@ -191,12 +191,12 @@ export function BacklogTab({ projectId, onPlanWithClaude }: Props) {
 
       {loading && tasks.length === 0 ? (
         <div className="card-surface px-4 py-12 text-center text-xs text-muted">
-          Loading backlog…
+          Loading tasks…
         </div>
       ) : filtered.length === 0 ? (
         tasks.length === 0 ? (
           <div className="card-surface flex flex-col items-center gap-3 px-4 py-12 text-center">
-            <p className="text-sm text-secondary">Backlog is empty.</p>
+            <p className="text-sm text-secondary">No tasks yet.</p>
             <div className="flex flex-wrap items-center justify-center gap-2">
               {onPlanWithClaude ? (
                 <button
@@ -213,7 +213,7 @@ export function BacklogTab({ projectId, onPlanWithClaude }: Props) {
                 onClick={() => setEditing({ mode: "create" })}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-muted"
               >
-                <Plus size={12} /> Add Backlog Item
+                <Plus size={12} /> Add Task
               </button>
             </div>
           </div>

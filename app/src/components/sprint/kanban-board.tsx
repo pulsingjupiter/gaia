@@ -627,7 +627,7 @@ function EmptyState({
           No active tasks in {name}
         </div>
         <p className="mx-auto mt-1 max-w-md text-xs text-muted">
-          Promote items from this project&rsquo;s backlog to track them here.
+          Promote items from this project&rsquo;s tasks to track them here.
         </p>
         <div className="mt-5 flex items-center gap-2">
           <Link
@@ -652,8 +652,8 @@ function EmptyState({
         No active tasks
       </div>
       <p className="mx-auto mt-1 max-w-md text-xs text-muted">
-        Tasks live inside projects. Create a project, add items to its backlog,
-        then promote them here to track progress as they move through your
+        Tasks live inside projects. Create a project, add tasks to it, then
+        promote them here to track progress as they move through your
         workflow.
       </p>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">

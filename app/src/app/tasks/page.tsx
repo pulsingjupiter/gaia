@@ -163,7 +163,7 @@ export default function TasksPage() {
               href="/projects"
               className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-2 text-xs font-semibold text-secondary hover:bg-surface-muted"
             >
-              Open Backlog
+              Open Tasks
             </Link>
           </div>
         }
