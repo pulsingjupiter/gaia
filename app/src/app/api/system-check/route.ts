@@ -145,6 +145,15 @@ function checkCodexCli(): Check {
   );
 }
 
+function checkGeminiCli(): Check {
+  return checkOptionalCli(
+    "gemini_cli_available",
+    "gemini",
+    "Gemini CLI",
+    "Gemini CLI (`gemini`) not found on PATH. Optional — only required for agents with runtime='gemini'. See https://github.com/google-gemini/gemini-cli for install instructions.",
+  );
+}
+
 function checkAgentsScaffolded(): Check {
   const missing: string[] = [];
   for (const slug of REQUIRED_AGENTS) {
@@ -206,10 +215,11 @@ function runChecks(): SystemCheckResult {
     checkDataDirWritable(),
     checkJulesCli(),
     checkCodexCli(),
+    checkGeminiCli(),
   ];
   // Aggregate `ok` only considers error-severity checks. `warn`-severity
-  // checks (the optional jules/codex CLIs) surface in the banner but never
-  // block the user from launching their Claude agents.
+  // checks (the optional jules/codex/gemini CLIs) surface in the banner but
+  // never block the user from launching their Claude agents.
   return {
     ok: checks.every((c) => c.ok || c.severity === "warn"),
     checks,

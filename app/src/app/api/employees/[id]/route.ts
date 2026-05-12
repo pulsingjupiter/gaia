@@ -32,6 +32,7 @@ const RUNTIME_VALUES: readonly EmployeeRuntime[] = [
   "claude",
   "jules",
   "codex",
+  "gemini",
 ] as const;
 
 function isRuntime(v: unknown): v is EmployeeRuntime {

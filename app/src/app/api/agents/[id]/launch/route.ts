@@ -28,12 +28,13 @@
  * Mirrors the AppleScript helpers in /api/sessions/[id]/resume but is keyed
  * by employee/agent rather than session.
  *
- * Multi-runtime MVP: when the employee's `runtime` is 'jules' or 'codex'
- * the command becomes a `cd <agent_dir>` followed by a comment hint
- * pointing at the relevant executor. We never attempt to spawn the
- * executor itself — the user runs `jules` / `codex` interactively. The
- * `continue` mode is meaningless for non-Claude runtimes (no resumable
- * JSONL session), so we collapse it to the same open-shell behaviour.
+ * Multi-runtime MVP: when the employee's `runtime` is 'jules', 'codex', or
+ * 'gemini' the command becomes a `cd <agent_dir>` followed by a comment
+ * hint pointing at the relevant executor. We never attempt to spawn the
+ * executor itself — the user runs `jules` / `codex` / `gemini`
+ * interactively. The `continue` mode is meaningless for non-Claude
+ * runtimes (no resumable JSONL session), so we collapse it to the same
+ * open-shell behaviour.
  */
 import { statSync } from "node:fs";
 
@@ -68,6 +69,9 @@ function buildCommand(
   }
   if (rt === "codex") {
     return `${cd} && echo '# Codex executor — run \`codex\` to start a task. Docs: https://github.com/openai/codex'`;
+  }
+  if (rt === "gemini") {
+    return `${cd} && echo '# Gemini executor — run \`gemini\` to start a session. Docs: https://github.com/google-gemini/gemini-cli'`;
   }
   const base = `${cd} && claude`;
   if (mode === "open") return base;
@@ -140,7 +144,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
 
   const employeeRuntime: EmployeeRuntime =
-    employee.runtime === "jules" || employee.runtime === "codex"
+    employee.runtime === "jules" ||
+    employee.runtime === "codex" ||
+    employee.runtime === "gemini"
       ? employee.runtime
       : "claude";
   const command = buildCommand(

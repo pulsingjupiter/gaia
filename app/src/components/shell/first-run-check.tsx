@@ -23,12 +23,14 @@ const REMEDIES: Record<string, string> = {
     "The database is created on first request — refresh this page.",
   data_dir_writable: "Make app/data writable: chmod -R u+w app/data",
   // Multi-runtime MVP: optional executors. Only relevant if the user adds
-  // a Jules/Codex-runtime agent — Gaia itself doesn't shell out to them
-  // until a launch button fires.
+  // a Jules/Codex/Gemini-runtime agent — Gaia itself doesn't shell out to
+  // them until a launch button fires.
   jules_cli_available:
     "Install the Jules CLI and authenticate per https://jules.google. Only needed for runtime='jules' agents.",
   codex_cli_available:
     "Install the Codex CLI from https://github.com/openai/codex. Only needed for runtime='codex' agents.",
+  gemini_cli_available:
+    "Install the Gemini CLI from https://github.com/google-gemini/gemini-cli. Only needed for runtime='gemini' agents.",
 };
 
 const TERMINAL_SUPPORTED = new Set([

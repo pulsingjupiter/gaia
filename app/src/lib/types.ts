@@ -7,13 +7,14 @@ export type AgentSlug =
 
 export type EmployeeStatus = "Online" | "Busy" | "Idle";
 
-export type EmployeeRuntime = "claude" | "jules" | "codex";
+export type EmployeeRuntime = "claude" | "jules" | "codex" | "gemini";
 
 /** Display labels for each runtime. Used by badges, picker, and launch button. */
 export const RUNTIME_LABELS: Record<EmployeeRuntime, string> = {
   claude: "Claude",
   jules: "Jules",
   codex: "Codex",
+  gemini: "Gemini",
 };
 
 /** Short one-line description shown in the Add/Edit modal runtime picker. */
@@ -21,16 +22,19 @@ export const RUNTIME_HELP: Record<EmployeeRuntime, string> = {
   claude: "Runs locally via Claude Code CLI. Default.",
   jules: "Async cloud executor (Google). Requires `jules` CLI installed.",
   codex: "Cloud executor (OpenAI). Requires `codex` CLI installed.",
+  gemini:
+    "General-purpose research / reasoning executor (Google Gemini). Requires `gemini` CLI installed.",
 };
 
 export const RUNTIME_VALUES: readonly EmployeeRuntime[] = [
   "claude",
   "jules",
   "codex",
+  "gemini",
 ] as const;
 
 export function isEmployeeRuntime(v: unknown): v is EmployeeRuntime {
-  return v === "claude" || v === "jules" || v === "codex";
+  return v === "claude" || v === "jules" || v === "codex" || v === "gemini";
 }
 
 export type Employee = {

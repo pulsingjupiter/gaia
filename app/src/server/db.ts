@@ -80,7 +80,7 @@ export const PATHS = {
 // Types
 // ---------------------------------------------------------------------------
 
-export type EmployeeRuntime = "claude" | "jules" | "codex";
+export type EmployeeRuntime = "claude" | "jules" | "codex" | "gemini";
 
 export type EmployeeRow = {
   id: string;
@@ -581,13 +581,13 @@ function initSchema(db: Database.Database): void {
   // `runtime` defaults to 'claude' so existing rows are migrated cleanly.
   // The CHECK constraint is enforced at INSERT/UPDATE time. The multi-runtime
   // MVP only branches launch + setup checks on this field — Gaia does not
-  // talk to the Jules/Codex CLIs itself.
+  // talk to the Jules/Codex/Gemini CLIs itself.
   const employeeAdds: Array<[string, string]> = [
     ["internal_only", "INTEGER NOT NULL DEFAULT 0"],
     ["daily_cost_cap_usd", "REAL"],
     [
       "runtime",
-      "TEXT NOT NULL DEFAULT 'claude' CHECK (runtime IN ('claude','jules','codex'))",
+      "TEXT NOT NULL DEFAULT 'claude' CHECK (runtime IN ('claude','jules','codex','gemini'))",
     ],
   ];
   for (const [col, decl] of employeeAdds) {
@@ -597,6 +597,45 @@ function initSchema(db: Database.Database): void {
       const msg = err instanceof Error ? err.message : String(err);
       if (!/duplicate column/i.test(msg)) throw err;
     }
+  }
+
+  // Multi-runtime MVP follow-up: SQLite stores column CHECK constraints in
+  // the original CREATE TABLE / ADD COLUMN DDL, and there is no in-place
+  // way to widen one. Older databases scaffolded before `gemini` joined the
+  // runtime set will still carry `CHECK (runtime IN ('claude','jules','codex'))`,
+  // which would reject any INSERT/UPDATE with runtime='gemini'. Detect that
+  // exact pattern from `sqlite_master.sql` and rebuild the employees table
+  // with the broader CHECK, copying data across in a transaction. The
+  // rebuild is a one-off — once `sqlite_master.sql` mentions 'gemini' the
+  // guard short-circuits and this is essentially free on subsequent boots.
+  const employeesDdlRow = db
+    .prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'employees'`,
+    )
+    .get() as { sql?: string } | undefined;
+  const employeesDdl = employeesDdlRow?.sql ?? "";
+  const needsRuntimeCheckRebuild =
+    /CHECK\s*\(\s*runtime\s+IN\s*\([^)]*\)\s*\)/i.test(employeesDdl) &&
+    !/gemini/i.test(employeesDdl);
+  if (needsRuntimeCheckRebuild) {
+    const rebuild = db.transaction(() => {
+      // Inline-rewrite the existing DDL so we preserve every column,
+      // default, and other CHECK exactly as-is — only the runtime CHECK
+      // list is widened. Renaming the table away first avoids the
+      // "table employees already exists" error and lets us copy via a
+      // simple SELECT *.
+      const newDdl = employeesDdl
+        .replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?employees/i, "CREATE TABLE employees_new")
+        .replace(
+          /CHECK\s*\(\s*runtime\s+IN\s*\([^)]*\)\s*\)/i,
+          "CHECK (runtime IN ('claude','jules','codex','gemini'))",
+        );
+      db.exec(newDdl);
+      db.exec(`INSERT INTO employees_new SELECT * FROM employees`);
+      db.exec(`DROP TABLE employees`);
+      db.exec(`ALTER TABLE employees_new RENAME TO employees`);
+    });
+    rebuild();
   }
 
   // Idempotent ADD COLUMN for projects — brief_markdown for the longer prose
