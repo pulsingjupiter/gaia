@@ -5,7 +5,7 @@
 If you discover a security issue in Gaia, please report it privately by
 opening a GitHub security advisory:
 
-<https://github.com/adrianlee2026-glitch/gaia/security/advisories/new>
+<https://github.com/pulsingjupiter/gaia/security/advisories/new>
 
 Please do not file public issues for security problems.
 

@@ -7,7 +7,7 @@ opening a large change.
 ## Quickstart
 
 ```bash
-gh repo clone adrianlee2026-glitch/gaia
+gh repo clone pulsingjupiter/gaia
 cd gaia
 ./setup.sh
 cd app

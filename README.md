@@ -91,7 +91,7 @@ The full guide lives in [INSTALL.md](./INSTALL.md). The three-line
 version:
 
 ```bash
-gh repo clone adrianlee2026-glitch/gaia
+gh repo clone pulsingjupiter/gaia
 cd gaia && ./setup.sh
 cd app && npm run dev    # → http://localhost:7878
 ```
