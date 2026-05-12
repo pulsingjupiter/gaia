@@ -20,6 +20,7 @@ export type ProjectRow = {
   agent_avatar: string | null;
   is_internal: 0 | 1;
   description: string | null;
+  repo_url: string | null;
   archived: 0 | 1;
   created_at: number;
   updated_at: number;
@@ -42,6 +43,7 @@ export type CreateProjectInput = {
   agent_name?: string;
   agent_avatar?: string;
   description?: string;
+  repo_url?: string | null;
 };
 
 export type UpdateProjectPatch = Partial<{
@@ -54,6 +56,7 @@ export type UpdateProjectPatch = Partial<{
   agent_avatar: string;
   is_internal: 0 | 1;
   description: string;
+  repo_url: string | null;
   archived: 0 | 1;
 }>;
 

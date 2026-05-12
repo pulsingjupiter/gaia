@@ -31,6 +31,7 @@ import type { SessionRow } from "@/lib/hooks/use-project-sessions";
 import { useEmployees } from "@/components/employees/employees-context";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { ProjectStatusStrip } from "./status-strip";
+import { RepoMetadataPills } from "./repo-metadata-pills";
 import type {
   ProjectRow,
   UseProjectDetail,
@@ -205,7 +206,10 @@ export function OverviewTab({
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
           Status
         </h3>
-        <ProjectStatusStrip projectId={project.id} />
+        <div className="space-y-2">
+          <ProjectStatusStrip projectId={project.id} />
+          <RepoMetadataPills projectId={project.id} />
+        </div>
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

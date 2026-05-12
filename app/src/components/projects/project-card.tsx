@@ -16,6 +16,7 @@ import { Archive, AlertCircle, MoreHorizontal } from "lucide-react";
 import { IconGlyph } from "./icon-glyph";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { cn } from "@/lib/cn";
+import { parseRepoUrl } from "@/lib/repo-url";
 import type { ProjectWithStats } from "@/lib/hooks/use-projects";
 
 type Props = {
@@ -113,6 +114,7 @@ export function ProjectCard({ project, liveSummary, pulseKey, onArchive }: Props
   };
 
   const autoDiscovered = isAutoDiscovered(project);
+  const repoInfo = parseRepoUrl(project.repo_url);
 
   return (
     <Link
@@ -139,6 +141,14 @@ export function ProjectCard({ project, liveSummary, pulseKey, onArchive }: Props
               <div className="truncate text-[15px] font-semibold text-primary">
                 {project.name}
               </div>
+              {repoInfo ? (
+                <div
+                  className="truncate text-[11px] text-muted"
+                  title={repoInfo.url}
+                >
+                  {repoInfo.owner}/{repoInfo.repo}
+                </div>
+              ) : null}
               <div className="truncate font-mono text-[11px] text-muted">
                 {truncatePath(project.path)}
               </div>

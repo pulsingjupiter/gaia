@@ -5,10 +5,11 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { Archive, ChevronRight, MoreHorizontal, Pencil, Sparkles, Wand2 } from "lucide-react";
+import { Archive, ChevronRight, FolderGit, MoreHorizontal, Pencil, Sparkles, Wand2 } from "lucide-react";
 
 import { IconGlyph } from "../icon-glyph";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
+import { parseRepoUrl } from "@/lib/repo-url";
 import type { ProjectRow, ProjectStats } from "@/lib/hooks/use-project-detail";
 
 type Props = {
@@ -52,6 +53,7 @@ export function ProjectHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const color = project.color ?? DEFAULT_COLOR;
   const status = deriveStatus(project, stats);
+  const repoInfo = parseRepoUrl(project.repo_url);
 
   return (
     <div className="flex items-start justify-between gap-4 pb-5">
@@ -92,6 +94,20 @@ export function ProjectHeader({
               <h1 className="truncate text-[24px] font-bold leading-tight tracking-tight text-primary">
                 {project.name}
               </h1>
+              {repoInfo ? (
+                <a
+                  href={repoInfo.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex max-w-[220px] shrink min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted hover:bg-surface-muted hover:text-secondary"
+                  title={repoInfo.url}
+                >
+                  <FolderGit size={13} className="shrink-0" />
+                  <span className="truncate">
+                    {repoInfo.owner}/{repoInfo.repo}
+                  </span>
+                </a>
+              ) : null}
               <span
                 className="inline-flex items-center gap-1.5 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-secondary"
                 title={`Status: ${status.label}`}

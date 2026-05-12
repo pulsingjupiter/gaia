@@ -7,20 +7,21 @@
  * paths and hidden / node_modules dirs are skipped, and we don't descend into
  * a repo once detected.
  */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 
 import {
+  detectRepoUrl,
   listProjects,
   upsertProject,
   type ProjectRow,
 } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 import { pickProjectColor } from "@/server/session-watcher.ts";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 type ScanBody = {
   baseDir?: unknown;
@@ -113,11 +114,13 @@ export async function POST(request: Request): Promise<Response> {
 
   const added: ProjectRow[] = [];
   for (const repo of repos) {
+    const repoUrl = await detectRepoUrl(repo);
     const project = upsertProject({
       name: path.basename(repo),
       path: repo,
       transcript_dir: sanitisedTranscriptDir(repo),
       color: pickProjectColor(repo),
+      repo_url: repoUrl,
     });
     added.push(project);
   }

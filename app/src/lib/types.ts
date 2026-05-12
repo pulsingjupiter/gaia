@@ -131,3 +131,23 @@ export type ActivityEntry = {
   target: string;
   time: string;
 };
+
+export type { RepoUrlInfo } from "./repo-url";
+
+export type Project = {
+  id: string;
+  name: string;
+  path: string;
+  transcript_dir: string | null;
+  color: string | null;
+  icon: string | null;
+  agent_name: string | null;
+  agent_avatar: string | null;
+  is_internal: 0 | 1;
+  description: string | null;
+  brief_markdown: string | null;
+  repo_url: string | null;
+  archived: 0 | 1;
+  created_at: number;
+  updated_at: number;
+};

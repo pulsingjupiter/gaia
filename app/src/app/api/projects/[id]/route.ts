@@ -3,17 +3,18 @@
  * PATCH  /api/projects/[id]   → { project } (partial update)
  * DELETE /api/projects/[id]   → soft-delete (archived=1)
  */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import {
   archiveProject,
   getProject,
   getProjectStats,
+  parseRepoUrl,
   updateProject,
   type UpdateProjectPatch,
 } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -41,6 +42,7 @@ const ALLOWED_PATCH_KEYS: ReadonlyArray<keyof UpdateProjectPatch> = [
   "is_internal",
   "description",
   "brief_markdown",
+  "repo_url",
   "archived",
 ];
 
@@ -57,6 +59,22 @@ export async function PATCH(req: Request, ctx: RouteCtx): Promise<Response> {
   const patch: UpdateProjectPatch = {};
   for (const key of ALLOWED_PATCH_KEYS) {
     if (key in body) {
+      if (key === "repo_url") {
+        const value = body[key];
+        if (value === null) {
+          patch.repo_url = null;
+          continue;
+        }
+        const parsed = typeof value === "string" ? parseRepoUrl(value) : null;
+        if (!parsed) {
+          return Response.json(
+            { error: "repo_url must be a valid repository URL or null" },
+            { status: 400 },
+          );
+        }
+        patch.repo_url = parsed.url;
+        continue;
+      }
       (patch as Record<string, unknown>)[key] = body[key];
     }
   }

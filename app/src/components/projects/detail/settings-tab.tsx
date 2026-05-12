@@ -13,9 +13,10 @@
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, FileText, Save, X } from "lucide-react";
+import { Archive, FileText, GitBranch, Save, Search, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { parseRepoUrl } from "@/lib/repo-url";
 import {
   PROJECT_ICON_OPTIONS,
 } from "../icon-glyph";
@@ -59,6 +60,11 @@ export function SettingsTab({ project, update, archive }: Props) {
   const [brief, setBrief] = useState(project.brief_markdown ?? "");
   const [savingBrief, setSavingBrief] = useState(false);
   const [briefToast, setBriefToast] = useState<string | null>(null);
+  const [repoUrl, setRepoUrl] = useState(project.repo_url ?? "");
+  const [savingRepo, setSavingRepo] = useState(false);
+  const [detectingRepo, setDetectingRepo] = useState(false);
+  const [repoError, setRepoError] = useState<string | null>(null);
+  const [repoToast, setRepoToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -72,6 +78,8 @@ export function SettingsTab({ project, update, archive }: Props) {
     setAgentAvatar(project.agent_avatar);
     setDescription(project.description ?? "");
     setBrief(project.brief_markdown ?? "");
+    setRepoUrl(project.repo_url ?? "");
+    setRepoError(null);
   }, [project]);
 
   const dirty =
@@ -125,6 +133,58 @@ export function SettingsTab({ project, update, archive }: Props) {
     }
   }
 
+  const repoParsed = repoUrl.trim() ? parseRepoUrl(repoUrl) : null;
+  const repoDirty =
+    (repoParsed?.url ?? null) !== (project.repo_url ?? null) ||
+    (!repoUrl.trim() && project.repo_url !== null);
+  const repoInvalid = repoUrl.trim().length > 0 && !repoParsed;
+
+  async function handleSaveRepo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!repoDirty || savingRepo) return;
+    if (repoInvalid) {
+      setRepoError("Enter a valid repository URL.");
+      return;
+    }
+    setSavingRepo(true);
+    setRepoError(null);
+    const updated = await update({
+      repo_url: repoParsed?.url ?? null,
+    });
+    setSavingRepo(false);
+    if (updated) {
+      setRepoUrl(updated.repo_url ?? "");
+      setRepoToast("Repository saved");
+      window.setTimeout(() => setRepoToast(null), 2000);
+    } else {
+      setRepoError("Could not save repository.");
+    }
+  }
+
+  async function handleDetectRepo() {
+    setDetectingRepo(true);
+    setRepoError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(project.id)}/detect-repo`,
+        { method: "POST" },
+      );
+      if (!res.ok) throw new Error(`POST detect-repo ${res.status}`);
+      const data = (await res.json()) as { url: unknown };
+      if (typeof data.url === "string" && data.url.trim()) {
+        setRepoUrl(data.url);
+        setRepoToast("Repository detected. Save to apply.");
+        window.setTimeout(() => setRepoToast(null), 2500);
+      } else {
+        setRepoError("No origin remote found in .git/config.");
+      }
+    } catch (err) {
+      setRepoError(err instanceof Error ? err.message : "Could not auto-detect repository.");
+    } finally {
+      setDetectingRepo(false);
+    }
+  }
+
   return (
     <div className="max-w-2xl space-y-8">
       <form onSubmit={handleSaveBrief} className="space-y-3">
@@ -164,6 +224,78 @@ export function SettingsTab({ project, update, archive }: Props) {
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               <Save size={12} /> {savingBrief ? "Saving…" : "Save brief"}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <hr className="border-subtle" />
+
+      <form onSubmit={handleSaveRepo} className="space-y-3">
+        <div>
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+            <GitBranch size={14} /> Repository
+          </h2>
+          <p className="mt-1 text-[11px] text-muted">
+            Git remote used for project links and lightweight GitHub metadata.
+          </p>
+        </div>
+        <Field label="Repository URL">
+          <input
+            type="text"
+            value={repoUrl}
+            onChange={(e) => {
+              setRepoUrl(e.target.value);
+              setRepoError(null);
+            }}
+            placeholder="https://github.com/owner/repo"
+            className={cn(
+              "w-full rounded-lg border bg-white px-3 py-1.5 text-sm text-primary focus:outline-none",
+              repoInvalid ? "border-status-error" : "border-strong",
+            )}
+          />
+          {repoInvalid || repoError ? (
+            <p className="mt-1 text-[11px] font-medium text-status-error">
+              {repoError ?? "Enter a valid repository URL."}
+            </p>
+          ) : null}
+        </Field>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleDetectRepo()}
+              disabled={detectingRepo}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted disabled:opacity-50"
+            >
+              <Search size={12} />
+              {detectingRepo ? "Detecting…" : "Auto-detect from .git"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRepoUrl("");
+                setRepoError(null);
+              }}
+              disabled={!repoUrl.trim() && !project.repo_url}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted disabled:opacity-50"
+            >
+              <Trash2 size={12} />
+              Clear
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            {repoToast ? (
+              <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
+                {repoToast}
+              </span>
+            ) : null}
+            <button
+              type="submit"
+              disabled={!repoDirty || repoInvalid || savingRepo}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <Save size={12} /> {savingRepo ? "Saving…" : "Save repository"}
             </button>
           </div>
         </div>

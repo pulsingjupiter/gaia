@@ -5,20 +5,22 @@
  * Wave 1 — Claude Code orchestrator. Projects are auto-discovered by the
  * watcher; this route exists for manual create/list.
  */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import path from "node:path";
 import fs from "node:fs";
 import type { NextRequest } from "next/server";
 
 import {
+  detectRepoUrl,
   listProjects,
+  parseRepoUrl,
   upsertProject,
   type ProjectFilters,
 } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 import { pickProjectColor } from "@/server/session-watcher.ts";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 function badRequest(msg: string): Response {
   return Response.json({ error: msg }, { status: 400 });
@@ -48,6 +50,7 @@ type CreateBody = {
   agent_name?: unknown;
   agent_avatar?: unknown;
   description?: unknown;
+  repo_url?: unknown;
 };
 
 function asString(v: unknown): string | undefined {
@@ -82,6 +85,14 @@ export async function POST(request: Request): Promise<Response> {
 
   const transcript_dir = sanitisedTranscriptDir(dirPath);
   const color = asString(body.color) ?? pickProjectColor(dirPath);
+  let repoUrl: string | null = null;
+  if ("repo_url" in body && body.repo_url != null) {
+    const parsed = parseRepoUrl(asString(body.repo_url));
+    if (!parsed) return badRequest("repo_url must be a valid repository URL");
+    repoUrl = parsed.url;
+  } else if (!("repo_url" in body) && fs.existsSync(path.join(dirPath, ".git"))) {
+    repoUrl = await detectRepoUrl(dirPath);
+  }
   const project = upsertProject({
     name,
     path: dirPath,
@@ -91,6 +102,7 @@ export async function POST(request: Request): Promise<Response> {
     agent_name: asString(body.agent_name) ?? null,
     agent_avatar: asString(body.agent_avatar) ?? null,
     description: asString(body.description) ?? null,
+    repo_url: repoUrl,
   });
   return Response.json({ project }, { status: 201 });
 }

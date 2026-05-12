@@ -8,11 +8,18 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 
 import { DEFAULT_EMPLOYEES } from "../lib/mock/employees.ts";
+import {
+  parseRepoUrl,
+  type RepoUrlInfo,
+} from "../lib/repo-url.ts";
 import { isPlannerCli, type PlannerCli } from "../lib/types.ts";
+
+export { parseRepoUrl, type RepoUrlInfo };
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -299,6 +306,7 @@ export type ProjectRow = {
   is_internal: 0 | 1;
   description: string | null;
   brief_markdown: string | null;
+  repo_url: string | null;
   archived: 0 | 1;
   created_at: number;
   updated_at: number;
@@ -333,6 +341,28 @@ export type ProjectStats = {
   last_event_at: number | null;
 };
 
+export async function detectRepoUrl(projectPath: string): Promise<string | null> {
+  try {
+    const configPath = path.join(projectPath, ".git", "config");
+    const raw = await readFile(configPath, "utf8");
+    let inOrigin = false;
+    for (const line of raw.split(/\r?\n/)) {
+      const section = line.match(/^\s*\[remote\s+"([^"]+)"\]\s*$/);
+      if (section) {
+        inOrigin = section[1] === "origin";
+        continue;
+      }
+      if (!inOrigin) continue;
+      const url = line.match(/^\s*url\s*=\s*(.+?)\s*$/);
+      if (!url) continue;
+      return parseRepoUrl(url[1])?.url ?? null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Singleton
 // ---------------------------------------------------------------------------
@@ -344,6 +374,7 @@ export type ProjectStats = {
 // the live DB out from under one of them. Production hot reloads can't do
 // this either, so the global pin is safe.
 const DB_KEY = "__gaia_db_handle__";
+let repoUrlBackfillStarted = false;
 type GlobalWithDb = typeof globalThis & {
   [DB_KEY]?: Database.Database | null;
 };
@@ -432,6 +463,39 @@ export function _resetDb(): void {
   // on the next `getDb()` and double-delete a freshly-opened DB.
 }
 
+async function backfillProjectRepoUrls(db: Database.Database): Promise<void> {
+  if (repoUrlBackfillStarted) return;
+  repoUrlBackfillStarted = true;
+  try {
+    const existing = db
+      .prepare(`SELECT value FROM settings WHERE key = ?`)
+      .get("repo_url_backfilled_v1") as { value: string } | undefined;
+    if (existing) {
+      try {
+        if (JSON.parse(existing.value) === "1") return;
+      } catch {
+        return;
+      }
+    }
+
+    const rows = db
+      .prepare(`SELECT id, path FROM projects WHERE repo_url IS NULL`)
+      .all() as Array<{ id: string; path: string }>;
+    for (const project of rows) {
+      const detected = await detectRepoUrl(project.path);
+      if (!detected) continue;
+      db.prepare(`UPDATE projects SET repo_url = ?, updated_at = ? WHERE id = ?`)
+        .run(detected, Date.now(), project.id);
+    }
+    db.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run("repo_url_backfilled_v1", JSON.stringify("1"), Date.now());
+  } catch {
+    // Repository detection is best-effort and must not block boot.
+  }
+}
+
 function initSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS employees (
@@ -512,6 +576,7 @@ function initSchema(db: Database.Database): void {
       agent_avatar TEXT,
       is_internal INTEGER NOT NULL DEFAULT 0,
       description TEXT,
+      repo_url TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -655,6 +720,7 @@ function initSchema(db: Database.Database): void {
   // (description stays put as the short list-page subtitle.)
   const projectAdds: Array<[string, string]> = [
     ["brief_markdown", "TEXT"],
+    ["repo_url", "TEXT"],
   ];
   for (const [col, decl] of projectAdds) {
     try {
@@ -664,6 +730,7 @@ function initSchema(db: Database.Database): void {
       if (!/duplicate column/i.test(msg)) throw err;
     }
   }
+  void backfillProjectRepoUrls(db);
 
   // Idempotent ADD COLUMN for runs — project_id so we can scope a run's
   // wrapper prompt with the project's brief and later filter runs by project.
@@ -2692,6 +2759,7 @@ export type UpsertProjectInput = {
   is_internal?: boolean | 0 | 1;
   description?: string | null;
   brief_markdown?: string | null;
+  repo_url?: string | null;
 };
 
 function projectSlug(name: string): string {
@@ -2727,8 +2795,8 @@ export function upsertProject(input: UpsertProjectInput): ProjectRow {
       `INSERT INTO projects (
         id, name, path, transcript_dir, color, icon,
         agent_name, agent_avatar, is_internal, description, brief_markdown,
-        archived, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        repo_url, archived, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     )
     .run(
       id,
@@ -2742,6 +2810,7 @@ export function upsertProject(input: UpsertProjectInput): ProjectRow {
       isInternal,
       input.description ?? null,
       input.brief_markdown ?? null,
+      input.repo_url ? parseRepoUrl(input.repo_url)?.url ?? null : null,
       now,
       now,
     );
@@ -2759,6 +2828,7 @@ export type UpdateProjectPatch = Partial<{
   is_internal: boolean | 0 | 1;
   description: string | null;
   brief_markdown: string | null;
+  repo_url: string | null;
   archived: boolean | 0 | 1;
 }>;
 
@@ -2773,6 +2843,7 @@ const PROJECT_PATCH_KEYS = [
   "is_internal",
   "description",
   "brief_markdown",
+  "repo_url",
   "archived",
 ] as const;
 
@@ -2787,6 +2858,8 @@ export function updateProject(
       let v: unknown = (patch as Record<string, unknown>)[key];
       if (key === "is_internal" || key === "archived") {
         v = Number(Boolean(v)) as 0 | 1;
+      } else if (key === "repo_url" && typeof v === "string") {
+        v = parseRepoUrl(v)?.url ?? v;
       }
       setClauses.push(`${key} = ?`);
       values.push(v);
