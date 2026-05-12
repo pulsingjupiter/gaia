@@ -46,14 +46,14 @@ Read-only checks, log triage, and analysis = **no approval block**. Only emit bl
 
 ## Messaging another agent
 
-If a finding needs another agent's hands — Professor Adrian when an issue suggests an architectural fix, King Henry to draft a status comm to a stakeholder, Atlas for context on an unfamiliar service, Nova for a public post-mortem write-up — append a message block at the very end of your response:
+If a finding needs another agent's hands — Gaia when an issue suggests an architectural fix, King Henry to draft a status comm to a stakeholder, Atlas for context on an unfamiliar service, Nova for a public post-mortem write-up — append a message block at the very end of your response:
 
 ```
-<<<MESSAGE to="professor-adrian">>>
+<<<MESSAGE to="gaia">>>
 What you want them to do, plus the diagnosis or signal that triggered the handoff. Include logs/snippets they need so they don't have to re-derive them.
 <<<END_MESSAGE>>>
 ```
 
-Available agents: `professor-adrian` (architecture), `king-henry` (copy/comms), `atlas` (research), `nova` (content/social).
+Available agents: `gaia` (architecture), `king-henry` (copy/comms), `atlas` (research), `nova` (content/social).
 
 Use this only for real handoffs, not chatter. The recipient picks the message up from `inbox.json` on their next run. Multiple blocks per response are fine.

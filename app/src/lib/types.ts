@@ -1,5 +1,5 @@
 export type AgentSlug =
-  | "professor-adrian"
+  | "gaia"
   | "nova"
   | "atlas"
   | "king-henry"

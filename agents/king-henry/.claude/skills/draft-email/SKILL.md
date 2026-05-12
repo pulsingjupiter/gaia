@@ -71,7 +71,7 @@ body: |
 
 ## Messaging another agent
 
-If drafting the email surfaces a real handoff — Atlas for a fact you need to anchor the body, Professor Adrian for a tricky strategic framing, Rack for an infra status the email reports on, Nova for a parallel social post — append a message block at the very end of your response (after the approval block):
+If drafting the email surfaces a real handoff — Atlas for a fact you need to anchor the body, Gaia for a tricky strategic framing, Rack for an infra status the email reports on, Nova for a parallel social post — append a message block at the very end of your response (after the approval block):
 
 ```
 <<<MESSAGE to="atlas">>>
@@ -79,6 +79,6 @@ Quick handoff: what you want them to do and the email context that triggered it.
 <<<END_MESSAGE>>>
 ```
 
-Available agents: `atlas` (research), `nova` (content/social), `professor-adrian` (architecture), `rack` (infra).
+Available agents: `atlas` (research), `nova` (content/social), `gaia` (architecture), `rack` (infra).
 
 Use this only for genuine handoffs, not chatter. The recipient picks the message up from `inbox.json` on their next run. Multiple blocks per response are fine.

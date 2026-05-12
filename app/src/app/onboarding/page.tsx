@@ -29,7 +29,7 @@ type PersonaId =
   | "atlas"
   | "nova"
   | "rack"
-  | "professor-adrian"
+  | "gaia"
   | "custom";
 
 type Persona = {
@@ -75,10 +75,10 @@ const PERSONAS: Persona[] = [
     accent: "#3B82F6",
   },
   {
-    id: "professor-adrian",
-    name: "Professor Adrian",
-    role: "Researcher",
-    tagline: "Briefs, analysis, deep-dives.",
+    id: "gaia",
+    name: "Gaia",
+    role: "Meta-Agent & Architect",
+    tagline: "Briefs, architecture, deep-dives.",
     avatar: "sorcerer",
     accent: "#5B5BD6",
   },

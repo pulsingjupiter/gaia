@@ -1065,7 +1065,7 @@ export function seedEmployeesIfEmpty(): { seeded: boolean; count: number } {
   const now = Date.now();
   // Emoji defaults per persona (UI uses initials so these are optional).
   const emojiByRole: Record<string, string> = {
-    "professor-adrian": "🧠",
+    gaia: "🧠",
     nova: "✨",
     atlas: "🗺️",
     "king-henry": "✍️",

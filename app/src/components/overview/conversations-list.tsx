@@ -4,11 +4,11 @@ import { Avatar } from "@/components/ui/avatar";
 import { useEmployees } from "@/components/employees/employees-context";
 
 const ROWS = [
-  { ids: ["professor-adrian", "king-henry"], threads: 1, time: "7m" },
+  { ids: ["gaia", "king-henry"], threads: 1, time: "7m" },
   { ids: ["atlas", "king-henry"], threads: 1, time: "17m", active: true },
-  { ids: ["nova", "professor-adrian"], threads: 1, time: "1d" },
-  { ids: ["nova", "professor-adrian"], threads: 1, time: "1d" },
-  { ids: ["nova", "professor-adrian"], threads: 1, time: "1d" },
+  { ids: ["nova", "gaia"], threads: 1, time: "1d" },
+  { ids: ["nova", "gaia"], threads: 1, time: "1d" },
+  { ids: ["nova", "gaia"], threads: 1, time: "1d" },
 ];
 
 export function ConversationsList() {

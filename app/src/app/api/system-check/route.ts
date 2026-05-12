@@ -38,7 +38,7 @@ let cached: { at: number; result: SystemCheckResult } | null = null;
 
 const REQUIRED_AGENTS = [
   "king-henry",
-  "professor-adrian",
+  "gaia",
   "atlas",
   "nova",
   "rack",

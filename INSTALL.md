@@ -46,7 +46,7 @@ After `npm run dev` and opening `localhost:7878`:
 
 - **Overview** — KPI strip (today's runs, costs, pending approvals),
   task grid, workforce panel, schedule strip, activity rail.
-- **Agents** — one card per agent (king-henry, professor-adrian, atlas,
+- **Agents** — one card per agent (king-henry, gaia, atlas,
   nova, rack). Each card has inline controls: `[New]`, `[Continue]`,
   and a `[v]` menu. Clicking `New` opens Terminal.app at the agent's
   home directory and starts `claude` — the persona auto-loads.
@@ -288,4 +288,4 @@ Do not modify INSTALL.md or any other file in the bundle.
 
 ## 12. Credits
 
-Built by Adrian Lee. For questions, ask Adrian.
+Built with Claude Code.

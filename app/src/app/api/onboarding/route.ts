@@ -8,7 +8,7 @@
  * `agents/<persona>/CLAUDE.md` file at the project root.
  *
  * Body shape:
- *   { persona: 'king-henry' | 'atlas' | 'nova' | 'rack' | 'professor-adrian' | 'custom',
+ *   { persona: 'king-henry' | 'atlas' | 'nova' | 'rack' | 'gaia' | 'custom',
  *     project: { name: string, description?: string } }
  *
  * Test-instance only — refuses on prod (when GAIA_TEST_MODE != '1').
@@ -53,9 +53,9 @@ const PERSONAS = {
     accent: "#3B82F6",
     avatar: "monk",
   },
-  "professor-adrian": {
-    name: "Professor Adrian",
-    role: "Founder & Architect",
+  gaia: {
+    name: "Gaia",
+    role: "Meta-Agent & Architect",
     accent: "#5B5BD6",
     avatar: "sorcerer",
   },

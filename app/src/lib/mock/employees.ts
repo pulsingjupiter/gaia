@@ -2,14 +2,14 @@ import type { Employee } from "../types";
 
 export const DEFAULT_EMPLOYEES: Employee[] = [
   {
-    id: "professor-adrian",
-    slug: "professor-adrian",
-    name: "Professor Adrian",
-    role: "Founder & Architect",
+    id: "gaia",
+    slug: "gaia",
+    name: "Gaia",
+    role: "Meta-Agent & Architect",
     status: "Online",
     accent: "#5B5BD6",
-    initials: "PA",
-    handle: "@prof.adrian",
+    initials: "GA",
+    handle: "@gaia",
   },
   {
     id: "nova",

@@ -1,9 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
-  ChevronDown,
   ClipboardList,
   Clock,
   Plus,
@@ -24,6 +23,70 @@ import { LiveRunDrawer } from "@/components/shared/live-run-drawer";
 import { EmployeeModal } from "@/components/employees/employee-modal";
 import { useEmployees } from "@/components/employees/employees-context";
 import { OVERVIEW_TASKS, type OverviewTask } from "@/lib/mock/tasks";
+import { useTaskDueSummary } from "@/lib/hooks/use-task-due-summary";
+import { useUnreadCount } from "@/lib/hooks/use-unread-count";
+
+/** Time-of-day-aware greeting. Local clock, no name attached. */
+function greetingForHour(hour: number): string {
+  if (hour < 5) return "Good evening";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/** Live human-readable date, e.g. "Monday, May 12". */
+function formatToday(d: Date): string {
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/**
+ * Lightweight "completed today" counter. Hits the existing
+ * `/api/runs?stats=1&from=<startOfToday>` endpoint — no new backend.
+ * Returns null while loading or on failure so the KPI card can show "—"
+ * rather than a fake number.
+ */
+function useCompletedTodayCount(): number | null {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function refresh(): Promise<void> {
+      try {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const qs = new URLSearchParams({
+          stats: "1",
+          from: start.toISOString(),
+        });
+        const res = await fetch(`/api/runs?${qs.toString()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          stats?: { success?: number };
+        };
+        if (cancelled) return;
+        setCount(
+          typeof data.stats?.success === "number" ? data.stats.success : 0,
+        );
+      } catch {
+        // swallow — keep last-known value (initially null)
+      }
+    }
+    void refresh();
+    const id = setInterval(() => {
+      void refresh();
+    }, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  return count;
+}
 
 function pickEmployeeForTask(taskId: string, ids: string[]): string | null {
   // Stable round-robin assignment so each task card has a deterministic owner
@@ -41,6 +104,19 @@ export default function OverviewPage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Live, DB-backed numbers for the KPI strip. Each hook polls on its own
+  // cadence; all three endpoints are cheap (single SQL counts). No more
+  // hard-coded "12 / 28 / 24 / 7" placeholders.
+  const { summary: taskSummary } = useTaskDueSummary(null);
+  const { pendingApprovals } = useUnreadCount();
+  const completedToday = useCompletedTodayCount();
+
+  // Greeting + date are derived once per mount. Stale by minutes at worst,
+  // which is fine for a dashboard header.
+  const now = useMemo(() => new Date(), []);
+  const greeting = greetingForHour(now.getHours());
+  const todayLabel = formatToday(now);
 
   // Test instance: detect "skipped onboarding & still no agents" so we can
   // surface a friendly inline prompt at the top of the dashboard. Prod stays
@@ -65,7 +141,10 @@ export default function OverviewPage() {
   const visibleAgents = employees.filter(
     (e) => e.id !== "system" && !e.internalOnly,
   );
-  const showEmptyPrompt = testMode && visibleAgents.length === 0;
+  // Show the "Add your first agent" prompt whenever the roster is empty —
+  // not just on the test instance. Fresh clones (which no longer seed demo
+  // agents by default) land here on first paint.
+  const showEmptyPrompt = visibleAgents.length === 0;
 
   const runTask = useCallback(
     async (task: OverviewTask) => {
@@ -108,15 +187,14 @@ export default function OverviewPage() {
       <PageHeader
         title={
           <>
-            Good morning, Professor <span aria-hidden>👋</span>
+            {greeting} <span aria-hidden>👋</span>
           </>
         }
         subtitle="Here's what's happening with your AI workforce today."
         right={
-          <button className="inline-flex items-center gap-1.5 rounded-full border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary">
-            May 24, 2024
-            <ChevronDown size={12} />
-          </button>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary">
+            {todayLabel}
+          </span>
         }
       />
 
@@ -127,17 +205,19 @@ export default function OverviewPage() {
               No agents yet
             </div>
             <p className="mt-0.5 text-xs text-secondary">
-              You&apos;re running the test instance. Add your first agent to
-              start exploring.
+              Add your first agent to start exploring Gaia.
+              {testMode ? " You can also re-run the setup wizard." : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href="/onboarding"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-white/80"
-            >
-              Re-run wizard
-            </Link>
+            {testMode ? (
+              <Link
+                href="/onboarding"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-white/80"
+              >
+                Re-run wizard
+              </Link>
+            ) : null}
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
@@ -150,43 +230,77 @@ export default function OverviewPage() {
         </div>
       ) : null}
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard
-          label="Active Agents"
-          value={String(employees.length)}
-          secondary={`/ ${employees.length} online`}
-          footer={`${employees.filter((e) => e.status === "Online").length} idle, ready`}
-          icon={Users}
-          iconBg="#EEEAFD"
-          iconFg="#5B5BD6"
-        />
-        <KPICard
-          label="Tasks Running"
-          value="12"
-          secondary="/ 28"
-          footer="42% completed"
-          icon={ClipboardList}
-          iconBg="#D1FAE5"
-          iconFg="#059669"
-        />
-        <KPICard
-          label="Completed Today"
-          value="24"
-          footer="18% vs yesterday"
-          icon={CheckCircle2}
-          iconBg="#FCE7F3"
-          iconFg="#DB2777"
-        />
-        <KPICard
-          label="Pending Approvals"
-          value="7"
-          footer="Requires your review"
-          icon={Clock}
-          iconBg="#FFE4D6"
-          iconFg="#C2410C"
-        />
-      </div>
+      {/* KPI strip — all four values are DB-backed. No fake numbers on a
+          fresh clone: an empty workspace cleanly shows 0 / 0 / 0 / 0 until
+          the user starts spinning up agents and runs. */}
+      {(() => {
+        const visibleCount = visibleAgents.length;
+        const onlineCount = visibleAgents.filter(
+          (e) => e.status === "Online",
+        ).length;
+        const inProgress = taskSummary.in_progress;
+        const totalOpen = taskSummary.total;
+        const completedLabel =
+          completedToday === null ? "—" : String(completedToday);
+        return (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KPICard
+              label="Active Agents"
+              value={String(visibleCount)}
+              secondary={
+                visibleCount > 0 ? `/ ${visibleCount} online` : undefined
+              }
+              footer={
+                visibleCount === 0
+                  ? "No agents yet — add one to get started"
+                  : `${onlineCount} idle, ready`
+              }
+              icon={Users}
+              iconBg="#EEEAFD"
+              iconFg="#5B5BD6"
+            />
+            <KPICard
+              label="Tasks Running"
+              value={String(inProgress)}
+              secondary={totalOpen > 0 ? `/ ${totalOpen}` : undefined}
+              footer={
+                totalOpen === 0
+                  ? "No open tasks"
+                  : `${Math.round(((totalOpen - inProgress) / totalOpen) * 100)}% not yet started`
+              }
+              icon={ClipboardList}
+              iconBg="#D1FAE5"
+              iconFg="#059669"
+            />
+            <KPICard
+              label="Completed Today"
+              value={completedLabel}
+              footer={
+                completedToday === null
+                  ? "Loading…"
+                  : completedToday === 0
+                    ? "No runs completed yet today"
+                    : "Successful runs since midnight"
+              }
+              icon={CheckCircle2}
+              iconBg="#FCE7F3"
+              iconFg="#DB2777"
+            />
+            <KPICard
+              label="Pending Approvals"
+              value={String(pendingApprovals)}
+              footer={
+                pendingApprovals === 0
+                  ? "Nothing waiting on you"
+                  : "Requires your review"
+              }
+              icon={Clock}
+              iconBg="#FFE4D6"
+              iconFg="#C2410C"
+            />
+          </div>
+        );
+      })()}
 
       {runError ? (
         <div className="mt-4 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs text-[#991B1B]">

@@ -4,7 +4,7 @@
  *      → 200 { created: number, skipped: number, scheduled_runs: ScheduledRunRow[] }
  *
  * Pre-creates the five "Morning Briefing" demo cron tasks (Atlas, King Henry,
- * Rack, Nova, Professor Adrian) staggered between 9:00 and 10:00 SGT. All
+ * Rack, Nova, Gaia) staggered between 9:00 and 10:00 SGT. All
  * rows are inserted with `enabled = 0` so the user reviews them before the
  * scheduler fires anything.
  *
@@ -69,12 +69,12 @@ const BRIEFINGS: BriefingSpec[] = [
     title: "Nova: Daily content idea",
   },
   {
-    id: "morning-briefing-professor-adrian",
-    employee_id: "professor-adrian",
+    id: "morning-briefing-gaia",
+    employee_id: "gaia",
     skill: "research-tool",
     schedule_cron: "0 10 * * *",
     human_label: "Daily 10:00 AM",
-    title: "Professor Adrian: Architecture review",
+    title: "Gaia: Architecture review",
   },
 ];
 

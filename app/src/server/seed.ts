@@ -1,12 +1,15 @@
 /**
  * Boot-time seed.
  *
- * Idempotent: opens the SQLite DB (which auto-creates schema on first call)
- * and seeds the employees table from DEFAULT_EMPLOYEES if it is empty.
+ * Idempotent: opens the SQLite DB (which auto-creates schema on first call).
+ * Demo employees from DEFAULT_EMPLOYEES are only seeded when the operator
+ * explicitly opts in via `GAIA_SEED_DEMO=1`. Fresh clones start with an
+ * empty employees table so a stranger who clones the repo sees a clean
+ * onboarding flow, not somebody else's roster.
  *
  * Called at process start via `instrumentation.ts` and defensively by every
  * API route via `ensureSeeded()`. The first request on any route is therefore
- * guaranteed to see schema + seeded employees.
+ * guaranteed to see schema + (optionally) seeded employees.
  */
 import { ensureSystemEmployee, getDb, seedEmployeesIfEmpty } from "./db.ts";
 
@@ -34,16 +37,22 @@ export function ensureSeeded(): void {
   if (g[SEED_KEY]) return;
   // getDb() initialises the schema as a side-effect.
   getDb();
-  // Test-instance escape hatch: when GAIA_SKIP_SEED=1, leave the employees
-  // table empty so the user gets a true first-run "Add your first agent"
-  // experience. The schema + system pseudo-agent are still created so API
-  // routes don't crash on FK joins.
-  if (process.env.GAIA_SKIP_SEED === "1") {
-    ensureSystemEmployee();
-    g[SEED_KEY] = true;
-    return;
+  // Default: do NOT seed demo employees. A fresh clone should land on an
+  // empty roster with the "Add your first agent" prompt — not on somebody
+  // else's personal team.
+  //
+  // Opt-in: set GAIA_SEED_DEMO=1 to populate DEFAULT_EMPLOYEES (the canonical
+  // 5-agent demo: king-henry, atlas, nova, rack, gaia). Useful for the
+  // maintainer's local dev instance and for the demo / screenshot flows.
+  //
+  // Legacy: GAIA_SKIP_SEED=1 is still honored as a no-op (the new default is
+  // already "skip"), kept so existing scripts that set it don't surprise.
+  // The schema + system pseudo-agent are always created so API routes don't
+  // crash on FK joins regardless of seed mode.
+  const seedDemo = process.env.GAIA_SEED_DEMO === "1";
+  if (seedDemo) {
+    seedEmployeesIfEmpty();
   }
-  seedEmployeesIfEmpty();
   ensureSystemEmployee();
   g[SEED_KEY] = true;
 }

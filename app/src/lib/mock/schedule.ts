@@ -20,17 +20,17 @@ export const SCHEDULE_EVENTS: ScheduleEvent[] = [
   { id: "ad5", title: "Approvals Digest", day: 5, startHour: 0, durationHours: 1, tone: "amber", allDay: true },
 
   // 8 AM Approvals digest (every weekday)
-  { id: "e1", title: "Approvals digest", day: 0, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "professor-adrian" },
-  { id: "e2", title: "Approvals digest", day: 1, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "professor-adrian" },
-  { id: "e3", title: "Approvals digest", day: 4, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "professor-adrian" },
-  { id: "e4", title: "Approvals digest", day: 5, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "professor-adrian" },
-  { id: "e5", title: "Approvals digest", day: 6, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "professor-adrian" },
+  { id: "e1", title: "Approvals digest", day: 0, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "gaia" },
+  { id: "e2", title: "Approvals digest", day: 1, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "gaia" },
+  { id: "e3", title: "Approvals digest", day: 4, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "gaia" },
+  { id: "e4", title: "Approvals digest", day: 5, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "gaia" },
+  { id: "e5", title: "Approvals digest", day: 6, startHour: 8, durationHours: 1, tone: "amber", ownerSlug: "gaia" },
 
   // 9 AM Running the trending Mon–Wed
-  { id: "e6", title: "Running the trending", day: 4, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "professor-adrian" },
-  { id: "e7", title: "Running the trending", day: 5, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "professor-adrian" },
-  { id: "e8", title: "Running the trending", day: 6, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "professor-adrian" },
-  { id: "e8b", title: "Running the trending", day: 0, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "professor-adrian" },
+  { id: "e6", title: "Running the trending", day: 4, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "gaia" },
+  { id: "e7", title: "Running the trending", day: 5, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "gaia" },
+  { id: "e8", title: "Running the trending", day: 6, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "gaia" },
+  { id: "e8b", title: "Running the trending", day: 0, startHour: 9, durationHours: 1, tone: "violet", ownerSlug: "gaia" },
 
   // 10 AM Inbox triage
   { id: "e9", title: "Inbox triage", day: 0, startHour: 10, durationHours: 1, tone: "green", ownerSlug: "nova" },

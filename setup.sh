@@ -46,7 +46,7 @@ APP_DIR="$PROJECT_ROOT/app"
 AGENTS_DIR="$PROJECT_ROOT/agents"
 DATA_DIR="$APP_DIR/data"
 
-AGENTS=("king-henry" "professor-adrian" "atlas" "nova" "rack")
+AGENTS=("king-henry" "gaia" "atlas" "nova" "rack")
 
 # --- 1. welcome --------------------------------------------------------------
 

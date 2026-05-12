@@ -43,7 +43,7 @@ You'll see all three on every agent's detail page: the persona at the top, the s
 Gaia ships with five internal agents. You can rename, retrain, or retire any of them:
 
 - **King Henry** — copywriting, taglines, marketing voice.
-- **Professor Adrian** — meta architect; the agent that helps you design other agents.
+- **Gaia** — meta architect; the agent that helps you design other agents.
 - **Atlas** — research and competitive intelligence.
 - **Nova** — content production and social posts.
 - **Rack** — DevOps, deploy scripts, infra hygiene.
@@ -80,9 +80,9 @@ Your starting roster is five agents. Each one has a persona file (\`CLAUDE.md\`)
 
 Default skills: \`headline-generator\`, \`tagline-rewrite\`. King Henry is the agent you reach for when something needs to be **said**, not built. Marketing copy, naming, voice consistency, CTA tuning. He's tuned to be opinionated about clarity and to push back on jargon.
 
-## Professor Adrian — Architect / Meta
+## Gaia — Architect / Meta
 
-Default skill: \`design-new-agent\`. The Professor is the agent who helps you design other agents. Use him when you want to spin up a new persona, prune an existing one, or rewrite a skill from scratch. He thinks about scopes, inputs, and the trade-off between specialist and generalist agents.
+Default skill: \`design-new-agent\`. Gaia is the agent who helps you design other agents. Use Gaia when you want to spin up a new persona, prune an existing one, or rewrite a skill from scratch. Gaia thinks about scopes, inputs, and the trade-off between specialist and generalist agents.
 
 ## Atlas — Research
 
@@ -334,7 +334,7 @@ The canonical autonomy pattern: a handful of agents on staggered crons that leav
 - **King Henry — Inbox triage** (\`15 9 * * *\`) — surfaces urgent pending items; says so plainly when nothing's there.
 - **Rack — Daily infra check** (\`30 9 * * *\`) — routine health check, flags anomalies only.
 - **Nova — Daily content idea** (\`45 9 * * *\`) — one fresh sub-60-second video idea tied to today's research.
-- **Professor Adrian — Architecture review** (\`0 10 * * *\`) — three architecture call-outs ranked by leverage.
+- **Gaia — Architecture review** (\`0 10 * * *\`) — three architecture call-outs ranked by leverage.
 
 Click **Set up your morning briefing** on \`/schedule\` to create all five at once.
 

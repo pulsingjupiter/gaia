@@ -1,5 +1,5 @@
 export const AGENT_COLORS: Record<string, string> = {
-  "professor-adrian": "#5B5BD6",
+  gaia: "#5B5BD6",
   nova: "#F472B6",
   atlas: "#10B981",
   "king-henry": "#F59E0B",
@@ -7,7 +7,7 @@ export const AGENT_COLORS: Record<string, string> = {
 };
 
 export const AGENT_INITIALS: Record<string, string> = {
-  "professor-adrian": "PA",
+  gaia: "GA",
   nova: "NV",
   atlas: "AT",
   "king-henry": "KH",
@@ -15,7 +15,7 @@ export const AGENT_INITIALS: Record<string, string> = {
 };
 
 export const AGENT_NAMES: Record<string, string> = {
-  "professor-adrian": "Professor Adrian",
+  gaia: "Gaia",
   nova: "Nova",
   atlas: "Atlas",
   "king-henry": "King Henry",

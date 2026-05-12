@@ -26,9 +26,9 @@ export default async function PlaybookDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const name = AGENT_NAMES[slug] ?? "Professor Adrian";
+  const name = AGENT_NAMES[slug] ?? "Gaia";
   const color = AGENT_COLORS[slug] ?? "#5B5BD6";
-  const initials = AGENT_INITIALS[slug] ?? "PA";
+  const initials = AGENT_INITIALS[slug] ?? "GA";
 
   return (
     <div className="px-6 py-6">

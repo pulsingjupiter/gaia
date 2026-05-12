@@ -21,7 +21,7 @@ const BRIEFING_IDS = [
   "morning-briefing-king-henry",
   "morning-briefing-rack",
   "morning-briefing-nova",
-  "morning-briefing-professor-adrian",
+  "morning-briefing-gaia",
 ] as const;
 
 export type MorningBriefingCtaProps = {
