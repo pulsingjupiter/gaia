@@ -619,6 +619,13 @@ function initSchema(db: Database.Database): void {
     !/gemini/i.test(employeesDdl);
   if (needsRuntimeCheckRebuild) {
     const rebuild = db.transaction(() => {
+      // Defer FK validation until COMMIT so the intermediate DROP TABLE
+      // employees doesn't trip foreign keys held by messages/runs/tasks/
+      // scheduled_runs/etc. The rename restores the referenced table
+      // with identical id values before COMMIT, so FK checks pass.
+      // `defer_foreign_keys` is per-transaction and resets at COMMIT —
+      // unlike `foreign_keys` which is connection-level.
+      db.exec(`PRAGMA defer_foreign_keys = ON`);
       // Inline-rewrite the existing DDL so we preserve every column,
       // default, and other CHECK exactly as-is — only the runtime CHECK
       // list is widened. Renaming the table away first avoids the
