@@ -27,10 +27,17 @@
  *
  * Mirrors the AppleScript helpers in /api/sessions/[id]/resume but is keyed
  * by employee/agent rather than session.
+ *
+ * Multi-runtime MVP: when the employee's `runtime` is 'jules' or 'codex'
+ * the command becomes a `cd <agent_dir>` followed by a comment hint
+ * pointing at the relevant executor. We never attempt to spawn the
+ * executor itself — the user runs `jules` / `codex` interactively. The
+ * `continue` mode is meaningless for non-Claude runtimes (no resumable
+ * JSONL session), so we collapse it to the same open-shell behaviour.
  */
 import { statSync } from "node:fs";
 
-import { getEmployee } from "@/server/db.ts";
+import { getEmployee, type EmployeeRuntime } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 import {
   ITERM_LAUNCH_SCRIPT,
@@ -47,8 +54,22 @@ type RouteCtx = { params: Promise<{ id: string }> };
 const VALID_MODES = new Set(["open", "continue", "copy"]);
 const VALID_TERMS = new Set(["Terminal", "iTerm2"]);
 
-function buildCommand(agentDir: string, mode: "open" | "continue" | "copy"): string {
-  const base = `cd ${shellEscape(agentDir)} && claude`;
+function buildCommand(
+  agentDir: string,
+  mode: "open" | "continue" | "copy",
+  rt: EmployeeRuntime,
+): string {
+  const cd = `cd ${shellEscape(agentDir)}`;
+  if (rt === "jules") {
+    // The Jules CLI runs interactively. We just drop the user into the
+    // agent dir with a one-line reminder of how to start a task. The
+    // shell history shows the hint so it's discoverable later.
+    return `${cd} && echo '# Jules executor — run \`jules\` to start a task. Docs: https://jules.google'`;
+  }
+  if (rt === "codex") {
+    return `${cd} && echo '# Codex executor — run \`codex\` to start a task. Docs: https://github.com/openai/codex'`;
+  }
+  const base = `${cd} && claude`;
   if (mode === "open") return base;
   // Both 'continue' and 'copy' use the --continue form so the copied snippet
   // resumes the most recent session in cwd. (Verified via `claude --help`:
@@ -118,7 +139,15 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     workingDir = override;
   }
 
-  const command = buildCommand(workingDir, mode as "open" | "continue" | "copy");
+  const employeeRuntime: EmployeeRuntime =
+    employee.runtime === "jules" || employee.runtime === "codex"
+      ? employee.runtime
+      : "claude";
+  const command = buildCommand(
+    workingDir,
+    mode as "open" | "continue" | "copy",
+    employeeRuntime,
+  );
 
   if (mode === "copy") {
     return Response.json({ ok: true, command });

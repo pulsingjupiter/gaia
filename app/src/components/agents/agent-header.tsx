@@ -8,6 +8,7 @@ import { ChevronRight, Pencil, Archive } from "lucide-react";
 import type { EmployeeRow } from "@/lib/hooks/use-employees";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { AgentLaunchButton } from "@/components/shared/agent-launch-button";
+import { RUNTIME_LABELS } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 const STATUS_PILL: Record<string, { dot: string; label: string }> = {
@@ -63,6 +64,14 @@ export function AgentHeader({
                 <span className={cn("size-1.5 rounded-full", status.dot)} />
                 {status.label}
               </span>
+              {employee.runtime && employee.runtime !== "claude" ? (
+                <span
+                  title={`${RUNTIME_LABELS[employee.runtime]} runtime`}
+                  className="inline-flex items-center rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent"
+                >
+                  {RUNTIME_LABELS[employee.runtime]}
+                </span>
+              ) : null}
             </h1>
             <p className="mt-1 text-sm text-secondary">
               {employee.role || "—"}
@@ -74,6 +83,7 @@ export function AgentHeader({
           <AgentLaunchButton
             agentId={employee.id}
             agentName={employee.name}
+            runtime={employee.runtime}
             variant="primary"
             disabled={archived}
           />

@@ -22,6 +22,13 @@ const REMEDIES: Record<string, string> = {
   db_initialized:
     "The database is created on first request — refresh this page.",
   data_dir_writable: "Make app/data writable: chmod -R u+w app/data",
+  // Multi-runtime MVP: optional executors. Only relevant if the user adds
+  // a Jules/Codex-runtime agent — Gaia itself doesn't shell out to them
+  // until a launch button fires.
+  jules_cli_available:
+    "Install the Jules CLI and authenticate per https://jules.google. Only needed for runtime='jules' agents.",
+  codex_cli_available:
+    "Install the Codex CLI from https://github.com/openai/codex. Only needed for runtime='codex' agents.",
 };
 
 const TERMINAL_SUPPORTED = new Set([
@@ -121,9 +128,17 @@ export function FirstRunCheck(): React.ReactNode {
               const state = launchState[c.name];
               const feedback = feedbackLabel(state);
               const pending = state?.status === "pending";
+              const isWarn = c.severity === "warn";
               return (
                 <li key={c.name} className="leading-snug">
-                  <span className="font-medium">{c.message}</span>
+                  <span className="font-medium">
+                    {c.message}
+                    {isWarn ? (
+                      <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                        Optional
+                      </span>
+                    ) : null}
+                  </span>
                   <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-amber-900/80">
                     <span>{remedyFor(c.name, c.message)}</span>
                     {supported ? (

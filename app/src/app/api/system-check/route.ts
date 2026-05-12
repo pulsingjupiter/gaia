@@ -21,10 +21,19 @@ import { PATHS } from "@/server/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * `severity` distinguishes hard errors ("error", default — block launch) from
+ * soft warnings ("warn" — surface but don't block). Multi-runtime MVP uses
+ * "warn" for the optional jules/codex CLI checks: Gaia works fine without
+ * them, but agents pinned to those runtimes won't launch until installed.
+ */
+type CheckSeverity = "error" | "warn";
+
 type Check = {
   name: string;
   ok: boolean;
   message: string;
+  severity?: CheckSeverity;
 };
 
 type SystemCheckResult = {
@@ -74,6 +83,66 @@ function checkClaudeCli(): Check {
         "Claude Code CLI not found on PATH. Install with: npm install -g @anthropic-ai/claude-code",
     };
   }
+}
+
+/**
+ * `which`-style probe for an optional CLI. Returns a `warn`-severity Check
+ * so the setup banner displays the result without blocking (Gaia is fully
+ * functional without these — only agents pinned to the corresponding
+ * runtime need them).
+ */
+function checkOptionalCli(
+  name: string,
+  bin: string,
+  okSuffix: string,
+  missingHint: string,
+): Check {
+  try {
+    const out = execSync(`command -v ${bin}`, {
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+      shell: "/bin/sh",
+    }).trim();
+    if (!out) {
+      return {
+        name,
+        ok: false,
+        severity: "warn",
+        message: missingHint,
+      };
+    }
+    return {
+      name,
+      ok: true,
+      severity: "warn",
+      message: `${okSuffix} found at ${out}`,
+    };
+  } catch {
+    return {
+      name,
+      ok: false,
+      severity: "warn",
+      message: missingHint,
+    };
+  }
+}
+
+function checkJulesCli(): Check {
+  return checkOptionalCli(
+    "jules_cli_available",
+    "jules",
+    "Jules CLI",
+    "Jules CLI (`jules`) not found on PATH. Optional — only required for agents with runtime='jules'. See https://jules.google for install instructions.",
+  );
+}
+
+function checkCodexCli(): Check {
+  return checkOptionalCli(
+    "codex_cli_available",
+    "codex",
+    "Codex CLI",
+    "Codex CLI (`codex`) not found on PATH. Optional — only required for agents with runtime='codex'. See https://github.com/openai/codex for install instructions.",
+  );
 }
 
 function checkAgentsScaffolded(): Check {
@@ -135,9 +204,14 @@ function runChecks(): SystemCheckResult {
     checkAgentsScaffolded(),
     checkDbInitialized(),
     checkDataDirWritable(),
+    checkJulesCli(),
+    checkCodexCli(),
   ];
+  // Aggregate `ok` only considers error-severity checks. `warn`-severity
+  // checks (the optional jules/codex CLIs) surface in the banner but never
+  // block the user from launching their Claude agents.
   return {
-    ok: checks.every((c) => c.ok),
+    ok: checks.every((c) => c.ok || c.severity === "warn"),
     checks,
     checked_at: new Date().toISOString(),
   };

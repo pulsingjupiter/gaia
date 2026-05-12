@@ -38,6 +38,8 @@ import {
 import { cn } from "@/lib/cn";
 import { useAgentSkills } from "@/lib/hooks/use-agent-skills";
 import { LiveRunDrawer } from "@/components/shared/live-run-drawer";
+import type { EmployeeRuntime } from "@/lib/types";
+import { RUNTIME_LABELS } from "@/lib/types";
 
 type Variant = "primary" | "compact" | "inline" | "icon";
 
@@ -94,7 +96,13 @@ async function loadTerminalPref(force = false): Promise<TerminalPref> {
   }
 }
 
-function defaultActionFor(pref: TerminalPref): ActionId {
+function defaultActionFor(
+  pref: TerminalPref,
+  runtime: EmployeeRuntime,
+): ActionId {
+  // Non-Claude runtimes have no resumable session — collapse the default
+  // action to a new-session "open" instead of "continue".
+  if (runtime !== "claude") return openActionFor(pref);
   if (pref === "iterm2") return "continue-iterm2";
   if (pref === "copy") return "copy-continue";
   return "continue-terminal";
@@ -105,7 +113,11 @@ function openActionFor(pref: TerminalPref): ActionId {
   return "open-terminal";
 }
 
-function defaultLabelFor(pref: TerminalPref): string {
+function defaultLabelFor(
+  pref: TerminalPref,
+  runtime: EmployeeRuntime,
+): string {
+  if (runtime !== "claude") return `Launch ${RUNTIME_LABELS[runtime]}`;
   if (pref === "iterm2") return "Continue in iTerm2";
   if (pref === "copy") return "Copy continue command";
   return "Continue last session";
@@ -157,6 +169,13 @@ function successLabel(action: ActionId): string {
 type Props = {
   agentId: string;
   agentName?: string;
+  /**
+   * Multi-runtime MVP: when this is 'jules' or 'codex' the button label
+   * becomes "Launch Jules" / "Launch Codex", the menu hides Claude-only
+   * actions (continue/copy-continue), and the inline variant collapses
+   * its New/Continue pair to a single Launch button.
+   */
+  runtime?: EmployeeRuntime;
   variant?: Variant;
   disabled?: boolean;
   className?: string;
@@ -165,6 +184,7 @@ type Props = {
 export function AgentLaunchButton({
   agentId,
   agentName,
+  runtime: agentRuntime = "claude",
   variant = "primary",
   disabled = false,
   className,
@@ -272,8 +292,18 @@ export function AgentLaunchButton({
   }
 
   const ActiveIcon = defaultIconFor(pref);
-  const label = defaultLabelFor(pref);
-  const defaultAction = defaultActionFor(pref);
+  const label = defaultLabelFor(pref, agentRuntime);
+  const defaultAction = defaultActionFor(pref, agentRuntime);
+  // Filter the dropdown for non-Claude runtimes: continue/copy-continue
+  // resume a Claude-specific JSONL session which Jules/Codex don't have.
+  const menuItems = MENU.filter((m) => {
+    if (agentRuntime === "claude") return true;
+    return (
+      m.id === "open-terminal" ||
+      m.id === "open-iterm2" ||
+      m.id === "quick-run"
+    );
+  });
 
   const stop = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -305,14 +335,23 @@ export function AgentLaunchButton({
             onChevron={() => setOpen((v) => !v)}
           />
         ) : variant === "inline" ? (
-          <InlineSplit
-            ContinueIcon={ActiveIcon}
-            busy={busy}
-            disabled={disabled}
-            onNew={() => void fire(openActionFor(pref))}
-            onContinue={() => void fire(defaultAction)}
-            onChevron={() => setOpen((v) => !v)}
-          />
+          agentRuntime === "claude" ? (
+            <InlineSplit
+              ContinueIcon={ActiveIcon}
+              busy={busy}
+              disabled={disabled}
+              onNew={() => void fire(openActionFor(pref))}
+              onContinue={() => void fire(defaultAction)}
+              onChevron={() => setOpen((v) => !v)}
+            />
+          ) : (
+            <InlineLaunchOnly
+              busy={busy}
+              disabled={disabled}
+              onLaunch={() => void fire(defaultAction)}
+              onChevron={() => setOpen((v) => !v)}
+            />
+          )
         ) : (
           <IconSplit
             ActiveIcon={ActiveIcon}
@@ -326,6 +365,7 @@ export function AgentLaunchButton({
         {open ? (
           <Menu
             activeAction={defaultAction}
+            items={menuItems}
             onPick={(id) => void fire(id)}
             align="right"
           />
@@ -506,6 +546,41 @@ function InlineSplit({
   );
 }
 
+function InlineLaunchOnly({
+  busy,
+  disabled,
+  onLaunch,
+  onChevron,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  onLaunch: () => void;
+  onChevron: () => void;
+}) {
+  return (
+    <span className="inline-flex overflow-hidden rounded-md border border-strong bg-white">
+      <button
+        type="button"
+        onClick={onLaunch}
+        disabled={busy || disabled}
+        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-secondary hover:bg-surface-muted disabled:opacity-50"
+      >
+        {busy ? <Spinner small /> : <Play size={11} />}
+        Launch
+      </button>
+      <button
+        type="button"
+        onClick={onChevron}
+        disabled={disabled}
+        aria-label="Choose launch action"
+        className="inline-flex items-center justify-center border-l border-strong px-1 text-secondary hover:bg-surface-muted disabled:opacity-50"
+      >
+        <ChevronDown size={11} />
+      </button>
+    </span>
+  );
+}
+
 function IconSplit({
   ActiveIcon,
   busy,
@@ -548,10 +623,12 @@ function IconSplit({
 
 function Menu({
   activeAction,
+  items,
   onPick,
   align,
 }: {
   activeAction: ActionId;
+  items: MenuItem[];
   onPick: (id: ActionId) => void;
   align: "left" | "right";
 }) {
@@ -563,7 +640,7 @@ function Menu({
         align === "right" ? "right-0" : "left-0",
       )}
     >
-      {MENU.map(({ id, label, Icon, divider }) => {
+      {items.map(({ id, label, Icon, divider }) => {
         const active = id === activeAction;
         return (
           <div key={id}>

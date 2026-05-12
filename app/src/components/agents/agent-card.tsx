@@ -173,6 +173,7 @@ export function AgentCard({
         <AgentLaunchButton
           agentId={employee.id}
           agentName={employee.name}
+          runtime={employee.runtime}
           variant="inline"
         />
       </div>

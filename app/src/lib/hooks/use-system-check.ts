@@ -15,6 +15,12 @@ export type SystemCheck = {
   name: string;
   ok: boolean;
   message: string;
+  /**
+   * Multi-runtime MVP: `warn`-severity checks (optional jules/codex CLIs)
+   * surface in the banner but never flip the aggregate `ok` to false.
+   * Existing required checks omit the field — read as "error".
+   */
+  severity?: "error" | "warn";
 };
 
 export type SystemCheckPayload = {
