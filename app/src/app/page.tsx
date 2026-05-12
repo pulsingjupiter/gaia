@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -112,11 +112,19 @@ export default function OverviewPage() {
   const { pendingApprovals } = useUnreadCount();
   const completedToday = useCompletedTodayCount();
 
-  // Greeting + date are derived once per mount. Stale by minutes at worst,
-  // which is fine for a dashboard header.
-  const now = useMemo(() => new Date(), []);
-  const greeting = greetingForHour(now.getHours());
-  const todayLabel = formatToday(now);
+  // Greeting + date are derived from the client's local clock after mount.
+  // Computing them during render would run on the server too (Next.js
+  // pre-renders this page), and the server's timezone / wall-clock may
+  // differ from the user's — causing a React hydration mismatch warning.
+  // Keep the server-rendered fallback static ("Welcome", empty date), then
+  // upgrade in a useEffect once we're safely on the client.
+  const [greeting, setGreeting] = useState<string>("Welcome");
+  const [todayLabel, setTodayLabel] = useState<string>("");
+  useEffect(() => {
+    const now = new Date();
+    setGreeting(greetingForHour(now.getHours()));
+    setTodayLabel(formatToday(now));
+  }, []);
 
   // Test instance: detect "skipped onboarding & still no agents" so we can
   // surface a friendly inline prompt at the top of the dashboard. Prod stays
@@ -192,9 +200,11 @@ export default function OverviewPage() {
         }
         subtitle="Here's what's happening with your AI workforce today."
         right={
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary">
-            {todayLabel}
-          </span>
+          todayLabel ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary">
+              {todayLabel}
+            </span>
+          ) : null
         }
       />
 
