@@ -505,7 +505,13 @@ function ensureProjectForCwd(cwd: string, transcriptDir: string) {
   const byDir = getProjectByTranscriptDir(transcriptDir);
   if (byDir) {
     const patch: Parameters<typeof updateProject>[1] = {};
-    if (byDir.path !== cwd) patch.path = cwd;
+    if (byDir.path !== cwd) {
+      const collision = getProjectByPath(cwd);
+      if (!collision || collision.id === byDir.id) {
+        patch.path = cwd;
+      }
+      // else: another project owns this cwd — leave byDir.path alone to avoid UNIQUE collision
+    }
     // Flip is_internal up if the path now matches internal rules. Never
     // flip a legit user project DOWN to non-internal here — operators may
     // have toggled is_internal manually.
