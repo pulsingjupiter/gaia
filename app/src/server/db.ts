@@ -618,14 +618,14 @@ function initSchema(db: Database.Database): void {
     /CHECK\s*\(\s*runtime\s+IN\s*\([^)]*\)\s*\)/i.test(employeesDdl) &&
     !/gemini/i.test(employeesDdl);
   if (needsRuntimeCheckRebuild) {
+    // FKs must be OFF (connection-level) around the rebuild. `defer_foreign_keys`
+    // is insufficient: pre-existing rows like messages.sender_id='user' (the
+    // sentinel for the human side of a thread) violate the messages→employees
+    // FK at COMMIT time. Those orphans are real and predate the FK being on.
+    // Toggling foreign_keys around the transaction skips validation for the
+    // duration of the rebuild only.
+    db.pragma("foreign_keys = OFF");
     const rebuild = db.transaction(() => {
-      // Defer FK validation until COMMIT so the intermediate DROP TABLE
-      // employees doesn't trip foreign keys held by messages/runs/tasks/
-      // scheduled_runs/etc. The rename restores the referenced table
-      // with identical id values before COMMIT, so FK checks pass.
-      // `defer_foreign_keys` is per-transaction and resets at COMMIT —
-      // unlike `foreign_keys` which is connection-level.
-      db.exec(`PRAGMA defer_foreign_keys = ON`);
       // Inline-rewrite the existing DDL so we preserve every column,
       // default, and other CHECK exactly as-is — only the runtime CHECK
       // list is widened. Renaming the table away first avoids the
@@ -642,7 +642,11 @@ function initSchema(db: Database.Database): void {
       db.exec(`DROP TABLE employees`);
       db.exec(`ALTER TABLE employees_new RENAME TO employees`);
     });
-    rebuild();
+    try {
+      rebuild();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
   }
 
   // Idempotent ADD COLUMN for projects — brief_markdown for the longer prose
