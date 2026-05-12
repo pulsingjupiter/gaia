@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { GaiaLogo } from "./gaia-logo";
+import { VersionChip } from "./version-chip";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { useEmployees } from "@/components/employees/employees-context";
 import { useUnreadCount } from "@/lib/hooks/use-unread-count";
@@ -66,8 +67,8 @@ export function Sidebar() {
   // work and considered online for the workforce footer.
   const onlineCount = employees.filter((e) => e.status === "Online").length;
   const me =
-    employees.find((e) => e.slug === "professor-adrian") ??
-    employees.find((e) => e.id === "professor-adrian") ??
+    employees.find((e) => e.slug === "gaia") ??
+    employees.find((e) => e.id === "gaia") ??
     employees[0];
 
   // When the unread mix is "only chat messages" we use a muted slate badge so
@@ -174,6 +175,8 @@ export function Sidebar() {
             <ChevronDown size={14} className="text-muted" />
           </div>
         ) : null}
+
+        <VersionChip />
       </div>
     </aside>
   );
