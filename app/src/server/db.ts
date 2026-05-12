@@ -80,6 +80,8 @@ export const PATHS = {
 // Types
 // ---------------------------------------------------------------------------
 
+export type EmployeeRuntime = "claude" | "jules" | "codex";
+
 export type EmployeeRow = {
   id: string;
   name: string;
@@ -95,6 +97,13 @@ export type EmployeeRow = {
    * `startRun()` against `getAgentSpendToday()` (Asia/Singapore day boundary).
    */
   daily_cost_cap_usd: number | null;
+  /**
+   * Which executor launches/operates the agent. Defaults to 'claude' for
+   * existing rows. 'jules' (Google) and 'codex' (OpenAI) are async/cloud
+   * executors — the multi-runtime MVP only branches launch + setup checks
+   * on this field; no orchestration is done from Gaia's side.
+   */
+  runtime: EmployeeRuntime;
 };
 
 export type RunStatus =
@@ -565,12 +574,21 @@ function initSchema(db: Database.Database): void {
     }
   }
 
-  // Idempotent ADD COLUMN for employees — internal_only flag, daily cost cap.
-  // `daily_cost_cap_usd` is nullable (NULL = no cap). Existing rows default
-  // to NULL on the ADD COLUMN, which is the desired "no cap" semantics.
+  // Idempotent ADD COLUMN for employees — internal_only flag, daily cost cap,
+  // runtime. `daily_cost_cap_usd` is nullable (NULL = no cap). Existing rows
+  // default to NULL on the ADD COLUMN, which is the desired "no cap" semantics.
+  //
+  // `runtime` defaults to 'claude' so existing rows are migrated cleanly.
+  // The CHECK constraint is enforced at INSERT/UPDATE time. The multi-runtime
+  // MVP only branches launch + setup checks on this field — Gaia does not
+  // talk to the Jules/Codex CLIs itself.
   const employeeAdds: Array<[string, string]> = [
     ["internal_only", "INTEGER NOT NULL DEFAULT 0"],
     ["daily_cost_cap_usd", "REAL"],
+    [
+      "runtime",
+      "TEXT NOT NULL DEFAULT 'claude' CHECK (runtime IN ('claude','jules','codex'))",
+    ],
   ];
   for (const [col, decl] of employeeAdds) {
     try {

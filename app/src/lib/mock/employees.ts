@@ -10,6 +10,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     accent: "#5B5BD6",
     initials: "GA",
     handle: "@gaia",
+    runtime: "claude",
   },
   {
     id: "nova",
@@ -20,6 +21,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     accent: "#F472B6",
     initials: "NV",
     handle: "@nova",
+    runtime: "claude",
   },
   {
     id: "atlas",
@@ -30,6 +32,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     accent: "#10B981",
     initials: "AT",
     handle: "@atlas",
+    runtime: "claude",
   },
   {
     id: "king-henry",
@@ -40,6 +43,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     accent: "#F59E0B",
     initials: "KH",
     handle: "@king.henry",
+    runtime: "claude",
   },
   {
     id: "rack",
@@ -50,5 +54,6 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     accent: "#3B82F6",
     initials: "RK",
     handle: "@rack",
+    runtime: "claude",
   },
 ];

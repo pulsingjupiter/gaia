@@ -4,7 +4,12 @@
  *
  * Wave 2A.
  */
-import { getDb, getEmployee, type EmployeeRow } from "@/server/db.ts";
+import {
+  getDb,
+  getEmployee,
+  type EmployeeRow,
+  type EmployeeRuntime,
+} from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 
 export const runtime = "nodejs";
@@ -23,11 +28,28 @@ const NUMBER_PATCH_KEYS = [
   "daily_cost_cap_usd",
 ] as const;
 
+const RUNTIME_VALUES: readonly EmployeeRuntime[] = [
+  "claude",
+  "jules",
+  "codex",
+] as const;
+
+function isRuntime(v: unknown): v is EmployeeRuntime {
+  return typeof v === "string" && (RUNTIME_VALUES as readonly string[]).includes(v);
+}
+
 type StringKey = (typeof STRING_PATCH_KEYS)[number];
 type NumberKey = (typeof NUMBER_PATCH_KEYS)[number];
 
 type PatchBody = Partial<Record<StringKey, string | null>> &
-  Partial<Record<NumberKey, number | null>>;
+  Partial<Record<NumberKey, number | null>> & {
+    /**
+     * Multi-runtime MVP: switching an existing agent to jules/codex changes
+     * which CLI the launch button shells out to. Validated against the
+     * CHECK constraint on the employees table.
+     */
+    runtime?: string;
+  };
 
 function badRequest(msg: string): Response {
   return Response.json({ error: msg }, { status: 400 });
@@ -78,6 +100,16 @@ export async function PATCH(
       setClauses.push(`${key} = ?`);
       values.push(v);
     }
+  }
+  if ("runtime" in body) {
+    const v = body.runtime;
+    if (!isRuntime(v)) {
+      return badRequest(
+        `'runtime' must be one of: ${RUNTIME_VALUES.join("|")}`,
+      );
+    }
+    setClauses.push(`runtime = ?`);
+    values.push(v);
   }
   if (setClauses.length === 0) {
     return Response.json({ employee: existing });

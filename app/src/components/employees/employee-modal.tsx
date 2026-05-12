@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, Sparkles } from "lucide-react";
 
-import type { Employee, EmployeeStatus } from "@/lib/types";
+import type { Employee, EmployeeRuntime, EmployeeStatus } from "@/lib/types";
+import { RUNTIME_HELP, RUNTIME_LABELS, RUNTIME_VALUES } from "@/lib/types";
 import { useEmployees } from "./employees-context";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { IconPicker } from "@/components/shared/icon-picker";
@@ -49,6 +50,7 @@ export function EmployeeModal({
   const [status, setStatus] = useState<EmployeeStatus>("Online");
   const [accent, setAccent] = useState(ACCENT_OPTIONS[0].value);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<EmployeeRuntime>("claude");
   const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export function EmployeeModal({
     setStatus(employee?.status ?? "Online");
     setAccent(employee?.accent ?? ACCENT_OPTIONS[0].value);
     setAvatar(employee?.avatar ?? null);
+    setRuntime(employee?.runtime ?? "claude");
     setPickerOpen(false);
     // Edit mode: skip the picker. Create mode: show the picker first.
     setChoice(isEdit ? { kind: "blank" } : null);
@@ -91,17 +94,21 @@ export function EmployeeModal({
     setRole("");
     setAccent(ACCENT_OPTIONS[0].value);
     setAvatar(null);
+    setRuntime("claude");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     if (employee) {
-      update(employee.id, { name, role, status, accent, avatar });
+      update(employee.id, { name, role, status, accent, avatar, runtime });
     } else {
       const template_id =
         choice && choice.kind === "template" ? choice.template.id : null;
-      add({ name, role, status, accent, avatar }, { template_id });
+      add(
+        { name, role, status, accent, avatar, runtime },
+        { template_id },
+      );
     }
     onOpenChange(false);
   };
@@ -211,6 +218,48 @@ export function EmployeeModal({
                     className="mt-1 w-full rounded-lg border border-strong bg-white px-3 py-2 text-sm outline-none focus:border-accent"
                     placeholder="e.g. Data Engineer"
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-secondary">
+                    Runtime
+                  </label>
+                  <div
+                    role="radiogroup"
+                    aria-label="Runtime"
+                    className="mt-1 space-y-1.5"
+                  >
+                    {RUNTIME_VALUES.map((rt) => {
+                      const selected = runtime === rt;
+                      return (
+                        <label
+                          key={rt}
+                          className={
+                            "flex cursor-pointer items-start gap-2 rounded-lg border bg-white px-3 py-2 text-xs transition " +
+                            (selected
+                              ? "border-accent ring-1 ring-accent"
+                              : "border-strong hover:bg-surface-muted")
+                          }
+                        >
+                          <input
+                            type="radio"
+                            name="runtime"
+                            value={rt}
+                            checked={selected}
+                            onChange={() => setRuntime(rt)}
+                            className="mt-0.5 accent-accent"
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-medium text-primary">
+                              {RUNTIME_LABELS[rt]}
+                            </span>
+                            <span className="block text-[11px] leading-snug text-muted">
+                              {RUNTIME_HELP[rt]}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-secondary">

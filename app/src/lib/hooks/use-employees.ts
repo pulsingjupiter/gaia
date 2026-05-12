@@ -11,7 +11,8 @@
  * the UI `Employee` shape inside this module — keep that mapping local.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Employee, EmployeeStatus } from "@/lib/types";
+import type { Employee, EmployeeRuntime, EmployeeStatus } from "@/lib/types";
+import { isEmployeeRuntime } from "@/lib/types";
 
 // ---- Types matching Wave 2A's API ----
 export type EmployeeRow = {
@@ -29,6 +30,11 @@ export type EmployeeRow = {
    * rendering but should be hidden from agent-management UIs.
    */
   internal_only?: 0 | 1;
+  /**
+   * Multi-runtime MVP: which executor launches the agent. Server defaults
+   * to 'claude' so legacy rows hydrate as Claude agents automatically.
+   */
+  runtime?: EmployeeRuntime;
 };
 
 const CACHE_KEY = "gaia.employees.cache";
@@ -79,6 +85,7 @@ function rowToEmployee(row: EmployeeRow): Employee {
     handle: `@${slugify(row.name) || row.id}`,
     avatar: row.avatar_emoji ?? null,
     internalOnly: row.internal_only === 1,
+    runtime: isEmployeeRuntime(row.runtime) ? row.runtime : "claude",
   };
 }
 
@@ -162,6 +169,7 @@ export function useEmployees(): UseEmployees {
         accent_color: input.accent,
       };
       if (input.avatar !== undefined) body.avatar_emoji = input.avatar;
+      if (input.runtime !== undefined) body.runtime = input.runtime;
       if (opts?.template_id) body.template_id = opts.template_id;
       const res = await fetch("/api/employees", {
         method: "POST",
@@ -186,6 +194,7 @@ export function useEmployees(): UseEmployees {
       if (patch.status !== undefined) body.status = dbStatus(patch.status);
       if (patch.accent !== undefined) body.accent_color = patch.accent;
       if (patch.avatar !== undefined) body.avatar_emoji = patch.avatar;
+      if (patch.runtime !== undefined) body.runtime = patch.runtime;
       const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },

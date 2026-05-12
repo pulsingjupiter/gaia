@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 
 import type { Employee } from "@/lib/types";
+import { RUNTIME_LABELS } from "@/lib/types";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { AgentLaunchButton } from "@/components/shared/agent-launch-button";
 import { cn } from "@/lib/cn";
@@ -90,8 +91,18 @@ export function AgentCard({
             accent={employee.accent}
           />
           <div className="min-w-0">
-            <div className="truncate text-[18px] font-semibold leading-tight text-primary">
-              {employee.name}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="truncate text-[18px] font-semibold leading-tight text-primary">
+                {employee.name}
+              </div>
+              {employee.runtime !== "claude" ? (
+                <span
+                  title={`${RUNTIME_LABELS[employee.runtime]} runtime`}
+                  className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent"
+                >
+                  {RUNTIME_LABELS[employee.runtime]}
+                </span>
+              ) : null}
             </div>
             <div className="mt-0.5 truncate text-xs text-secondary">
               {employee.role || "—"}

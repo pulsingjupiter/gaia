@@ -21,11 +21,22 @@ import {
   getEmployee,
   PATHS,
   type EmployeeRow,
+  type EmployeeRuntime,
 } from "@/server/db.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 import { slugify } from "@/lib/slugify";
 import { getTemplateById } from "@/lib/agent-templates";
 import { ScaffoldError, scaffoldAgentFiles } from "@/server/agent-scaffold";
+
+const RUNTIME_VALUES: readonly EmployeeRuntime[] = [
+  "claude",
+  "jules",
+  "codex",
+] as const;
+
+function isRuntime(v: unknown): v is EmployeeRuntime {
+  return typeof v === "string" && (RUNTIME_VALUES as readonly string[]).includes(v);
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,6 +73,12 @@ type CreateBody = {
    * clients fail loudly.
    */
   template_id?: string | null;
+  /**
+   * Which executor will launch this agent. Defaults to 'claude' when
+   * omitted. Validated against the runtime CHECK constraint on the
+   * employees table.
+   */
+  runtime?: string;
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -110,6 +127,15 @@ export async function POST(request: Request): Promise<Response> {
     typeof body.accent_color === "string" ? body.accent_color : null;
   const avatar_emoji =
     typeof body.avatar_emoji === "string" ? body.avatar_emoji : null;
+  let runtime: EmployeeRuntime = "claude";
+  if (body.runtime !== undefined) {
+    if (!isRuntime(body.runtime)) {
+      return badRequest(
+        `runtime must be one of: ${RUNTIME_VALUES.join("|")}`,
+      );
+    }
+    runtime = body.runtime;
+  }
   const now = Date.now();
 
   // Scaffold filesystem first. Refuses to overwrite an existing dir, which
@@ -154,8 +180,8 @@ export async function POST(request: Request): Promise<Response> {
 
   getDb()
     .prepare(
-      `INSERT INTO employees (id, name, role, status, accent_color, avatar_emoji, agent_dir, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO employees (id, name, role, status, accent_color, avatar_emoji, agent_dir, created_at, runtime)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -166,6 +192,7 @@ export async function POST(request: Request): Promise<Response> {
       avatar_emoji,
       agent_dir,
       now,
+      runtime,
     );
 
   const employee = getEmployee(id) as EmployeeRow;
