@@ -91,6 +91,49 @@ const INITIAL_STATE: WizardState = {
 };
 
 const TOTAL_STEPS = 5;
+const CLIENT_INSTRUCTIONS_FILE_MAX_BYTES = 100 * 1024;
+
+type InstructionsFileState = {
+  file: File | null;
+  content: string | null;
+  error: string | null;
+};
+
+function readFileSliceAsArrayBuffer(
+  file: File,
+  start: number,
+  end: number,
+): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Could not inspect the selected file."));
+      }
+    };
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not inspect the selected file."));
+    reader.readAsArrayBuffer(file.slice(start, end));
+  });
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not read the selected file."));
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+}
 
 export function PlanWithClaudeModal({
   open,
@@ -107,7 +150,13 @@ export function PlanWithClaudeModal({
   const [installHint, setInstallHint] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [instructionsFile, setInstructionsFile] = useState<InstructionsFileState>({
+    file: null,
+    content: null,
+    error: null,
+  });
   const generatingRef = useRef(false);
+  const instructionsFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { employees } = useEmployees();
   const agents = useMemo(
@@ -126,9 +175,73 @@ export function PlanWithClaudeModal({
       setInstallHint(null);
       setApplying(false);
       setConfirmingCancel(false);
+      setInstructionsFile({ file: null, content: null, error: null });
+      if (instructionsFileInputRef.current) {
+        instructionsFileInputRef.current.value = "";
+      }
       generatingRef.current = false;
     }
   }, [open]);
+
+  const clearInstructionsFile = useCallback(() => {
+    setInstructionsFile({ file: null, content: null, error: null });
+    if (instructionsFileInputRef.current) {
+      instructionsFileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleInstructionsFileChange = useCallback(
+    async (file: File | null) => {
+      if (!file) {
+        clearInstructionsFile();
+        return;
+      }
+
+      if (file.size > CLIENT_INSTRUCTIONS_FILE_MAX_BYTES) {
+        setInstructionsFile({
+          file: null,
+          content: null,
+          error: "File is too large. Upload a Markdown, text, or JSON file under 100KB.",
+        });
+        if (instructionsFileInputRef.current) {
+          instructionsFileInputRef.current.value = "";
+        }
+        return;
+      }
+
+      try {
+        const head = await readFileSliceAsArrayBuffer(file, 0, 1024);
+        const bytes = new Uint8Array(head);
+        if (bytes.some((byte) => byte === 0)) {
+          setInstructionsFile({
+            file: null,
+            content: null,
+            error: "This file looks binary. Upload a Markdown, text, or JSON file.",
+          });
+          if (instructionsFileInputRef.current) {
+            instructionsFileInputRef.current.value = "";
+          }
+          return;
+        }
+
+        const content = await readFileAsText(file);
+        setInstructionsFile({ file, content, error: null });
+      } catch (err) {
+        setInstructionsFile({
+          file: null,
+          content: null,
+          error:
+            err instanceof Error
+              ? err.message
+              : "Could not read the selected file.",
+        });
+        if (instructionsFileInputRef.current) {
+          instructionsFileInputRef.current.value = "";
+        }
+      }
+    },
+    [clearInstructionsFile],
+  );
 
   // Body scroll lock + escape handler.
   useEffect(() => {
@@ -183,6 +296,7 @@ export function PlanWithClaudeModal({
             team_agent_ids: state.teamAgentIds,
             include_human: state.includeHuman,
             detail_level: state.detailLevel,
+            instructions_file_content: instructionsFile.content ?? null,
           }),
         },
       );
@@ -214,7 +328,7 @@ export function PlanWithClaudeModal({
     } finally {
       generatingRef.current = false;
     }
-  }, [projectId, state]);
+  }, [instructionsFile.content, projectId, state]);
 
   const apply = useCallback(async () => {
     if (!projectId || !proposal) return;
@@ -286,6 +400,10 @@ export function PlanWithClaudeModal({
             <Step1Goal
               value={state.goal}
               onChange={(v) => setState((s) => ({ ...s, goal: v }))}
+              instructionsFile={instructionsFile}
+              fileInputRef={instructionsFileInputRef}
+              onFileChange={(file) => void handleInstructionsFileChange(file)}
+              onRemoveFile={clearInstructionsFile}
             />
           ) : null}
           {step === 2 ? (
@@ -360,6 +478,8 @@ export function PlanWithClaudeModal({
         <Footer
           step={step}
           state={state}
+          hasInstructionsFile={Boolean(instructionsFile.content)}
+          hasInstructionsFileError={Boolean(instructionsFile.error)}
           totalMilestoneCount={totalMilestoneCount}
           totalTaskCount={totalTaskCount}
           applying={applying}
@@ -474,6 +594,8 @@ function Header({
 function Footer({
   step,
   state,
+  hasInstructionsFile,
+  hasInstructionsFileError,
   totalMilestoneCount,
   totalTaskCount,
   applying,
@@ -486,6 +608,8 @@ function Footer({
 }: {
   step: Step;
   state: WizardState;
+  hasInstructionsFile: boolean;
+  hasInstructionsFileError: boolean;
   totalMilestoneCount: number;
   totalTaskCount: number;
   applying: boolean;
@@ -551,7 +675,10 @@ function Footer({
     );
   }
 
-  const canProceed = stepIsValid(step, state);
+  const canProceed = stepIsValid(step, state, {
+    hasInstructionsFile,
+    hasInstructionsFileError,
+  });
   const isLastStep = step === TOTAL_STEPS;
 
   return (
@@ -588,10 +715,18 @@ function Footer({
   );
 }
 
-function stepIsValid(step: Step, state: WizardState): boolean {
-  if (step === 1) return state.goal.trim().length >= 10;
+function stepIsValid(
+  step: Step,
+  state: WizardState,
+  fileState: {
+    hasInstructionsFile: boolean;
+    hasInstructionsFileError: boolean;
+  },
+): boolean {
+  if (fileState.hasInstructionsFileError) return false;
+  if (step === 1) return true;
   if (step === 2) return true;
-  if (step === 3) return state.mustHave.trim().length >= 10;
+  if (step === 3) return true;
   if (step === 4) return state.teamAgentIds.length > 0 || state.includeHuman;
   if (step === 5) return true;
   return false;
@@ -604,23 +739,62 @@ function stepIsValid(step: Step, state: WizardState): boolean {
 function Step1Goal({
   value,
   onChange,
+  instructionsFile,
+  fileInputRef,
+  onFileChange,
+  onRemoveFile,
 }: {
   value: string;
   onChange: (v: string) => void;
+  instructionsFile: InstructionsFileState;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onFileChange: (file: File | null) => void;
+  onRemoveFile: () => void;
 }) {
   return (
     <Panel
       title="What's the goal of this project?"
-      hint="At least 10 characters. Be specific about the outcome."
+      hint="Add a short prompt, upload an instructions file, or use both."
     >
-      <textarea
-        autoFocus
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Ship Gaia v1 with kanban, scheduling, and agent templates"
-        rows={4}
-        className="w-full resize-y rounded-lg border border-strong bg-white px-3 py-2 text-sm text-primary focus:outline-none focus:border-accent"
-      />
+      <div className="space-y-3">
+        <Field label="Upload instructions file (optional)" hint="Markdown, text, or JSON, max 100KB.">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md,.markdown,.txt,.text,.json,text/markdown,text/plain,application/json"
+            onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+            className="block w-full text-xs text-secondary file:mr-3 file:rounded-md file:border file:border-strong file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-secondary hover:file:bg-surface-muted"
+          />
+        </Field>
+        {instructionsFile.file ? (
+          <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-subtle bg-surface-muted px-2.5 py-1 text-[11px] text-secondary">
+            <span className="truncate">
+              {instructionsFile.file.name} · {formatFileSize(instructionsFile.file.size)}
+            </span>
+            <button
+              type="button"
+              onClick={onRemoveFile}
+              aria-label="Remove instructions file"
+              className="rounded-full p-0.5 text-muted hover:bg-white hover:text-secondary"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ) : null}
+        {instructionsFile.error ? (
+          <div className="rounded-lg border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error">
+            {instructionsFile.error}
+          </div>
+        ) : null}
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Ship Gaia v1 with kanban, scheduling, and agent templates"
+          rows={4}
+          className="w-full resize-y rounded-lg border border-strong bg-white px-3 py-2 text-sm text-primary focus:outline-none focus:border-accent"
+        />
+      </div>
     </Panel>
   );
 }

@@ -31,6 +31,7 @@ export const dynamic = "force-dynamic";
 type RouteCtx = { params: Promise<{ id: string }> };
 
 const RAW_TRUNCATE = 16_000;
+const SERVER_INSTRUCTIONS_FILE_MAX_BYTES = 200 * 1024;
 
 type DetailLevel = "milestones" | "balanced" | "detailed";
 type DateFirmness = "hard" | "aspirational" | "none";
@@ -44,6 +45,7 @@ type PlanBody = {
   team_agent_ids?: unknown;
   include_human?: unknown;
   detail_level?: unknown;
+  instructions_file_content?: unknown;
 };
 
 type ProposalTask = {
@@ -273,11 +275,11 @@ export async function POST(
     return badRequest("invalid JSON body");
   }
 
-  if (typeof body.goal !== "string" || body.goal.trim().length < 10) {
-    return badRequest("goal (string, ≥10 chars) required");
+  if (body.goal !== undefined && typeof body.goal !== "string") {
+    return badRequest("goal must be string");
   }
-  if (typeof body.must_have !== "string" || body.must_have.trim().length < 10) {
-    return badRequest("must_have (string, ≥10 chars) required");
+  if (body.must_have !== undefined && typeof body.must_have !== "string") {
+    return badRequest("must_have must be string");
   }
   if (!isDateFirmness(body.date_firmness)) {
     return badRequest("date_firmness must be 'hard'|'aspirational'|'none'");
@@ -312,6 +314,22 @@ export async function POST(
   }
   const outOfScope =
     typeof body.out_of_scope === "string" ? body.out_of_scope.trim() : "";
+  let instructionsFileContent: string | null = null;
+  if (
+    body.instructions_file_content !== undefined &&
+    body.instructions_file_content !== null
+  ) {
+    if (typeof body.instructions_file_content !== "string") {
+      return badRequest("instructions_file_content must be string|null");
+    }
+    if (
+      Buffer.byteLength(body.instructions_file_content, "utf8") >
+      SERVER_INSTRUCTIONS_FILE_MAX_BYTES
+    ) {
+      return badRequest("instructions_file_content exceeds 200KB");
+    }
+    instructionsFileContent = body.instructions_file_content;
+  }
 
   const teamEmployees: EmployeeRow[] = [];
   for (const tid of teamIds) {
@@ -324,10 +342,10 @@ export async function POST(
 
   const basePrompt = composePrompt({
     project,
-    goal: body.goal.trim(),
+    goal: typeof body.goal === "string" ? body.goal.trim() : "",
     targetDate,
     dateFirmness: body.date_firmness,
-    mustHave: body.must_have.trim(),
+    mustHave: typeof body.must_have === "string" ? body.must_have.trim() : "",
     outOfScope,
     team: teamEmployees,
     includeHuman,
@@ -335,11 +353,15 @@ export async function POST(
     existingMilestones,
     existingTasks,
   });
+  const plannerPrompt =
+    instructionsFileContent !== null
+      ? `${basePrompt}\n\n--- Additional instructions (uploaded file) ---\n${instructionsFileContent}`
+      : basePrompt;
 
   const cwd = project.path;
 
   // First attempt — lenient prompt.
-  const first = await runPlanner(basePrompt, cwd);
+  const first = await runPlanner(plannerPrompt, cwd);
   if (first.kind === "missing") {
     return Response.json(
       {
@@ -376,7 +398,7 @@ export async function POST(
   let combinedRaw = first.stdout;
 
   if (!proposal) {
-    const strictPrompt = `${STRICT_PREAMBLE}${basePrompt}`;
+    const strictPrompt = `${STRICT_PREAMBLE}${plannerPrompt}`;
     const second = await runPlanner(strictPrompt, cwd, first.cli);
     if (second.kind === "ok") {
       combinedRaw = `${first.stdout}\n--- retry ---\n${second.stdout}`;
