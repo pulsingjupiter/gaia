@@ -2750,10 +2750,28 @@ export function getProject(id: string): ProjectRow | undefined {
     .get(id) as ProjectRow | undefined;
 }
 
+/**
+ * Normalize iCloud Drive paths that occasionally arrive in their decomposed
+ * form (where the macOS user-visible space becomes `/` and `~` separators
+ * become `/`). This happens when a Claude Code transcript records a cwd that
+ * has been path-encoded somewhere upstream. Storing the decomposed form is a
+ * silent bug: it does not exist on disk, so `claude -p` fails with ENOTDIR.
+ *
+ * Both forms map to the same real directory; we always store the canonical
+ * `Library/Mobile Documents/com~apple~CloudDocs/` form so downstream spawns
+ * land in the right place.
+ */
+export function canonicalizeProjectPath(p: string): string {
+  return p.replace(
+    /\/Library\/Mobile\/Documents\/com\/apple\/CloudDocs\//,
+    "/Library/Mobile Documents/com~apple~CloudDocs/",
+  );
+}
+
 export function getProjectByPath(path: string): ProjectRow | undefined {
   return getDb()
     .prepare(`SELECT * FROM projects WHERE path = ?`)
-    .get(path) as ProjectRow | undefined;
+    .get(canonicalizeProjectPath(path)) as ProjectRow | undefined;
 }
 
 export function getProjectByTranscriptDir(dir: string): ProjectRow | undefined {
@@ -2792,7 +2810,8 @@ function projectSlug(name: string): string {
  * we return it unchanged. Caller can then patch via updateProject if needed.
  */
 export function upsertProject(input: UpsertProjectInput): ProjectRow {
-  const existingByPath = getProjectByPath(input.path);
+  const canonicalPath = canonicalizeProjectPath(input.path);
+  const existingByPath = getProjectByPath(canonicalPath);
   if (existingByPath) return existingByPath;
 
   let id = input.id ?? projectSlug(input.name);
@@ -2816,7 +2835,7 @@ export function upsertProject(input: UpsertProjectInput): ProjectRow {
     .run(
       id,
       input.name,
-      input.path,
+      canonicalPath,
       input.transcript_dir ?? null,
       input.color ?? null,
       input.icon ?? null,
@@ -2875,6 +2894,8 @@ export function updateProject(
         v = Number(Boolean(v)) as 0 | 1;
       } else if (key === "repo_url" && typeof v === "string") {
         v = parseRepoUrl(v)?.url ?? v;
+      } else if (key === "path" && typeof v === "string") {
+        v = canonicalizeProjectPath(v);
       }
       setClauses.push(`${key} = ?`);
       values.push(v);
