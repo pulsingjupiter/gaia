@@ -17,6 +17,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { sessionDisplayLabel } from "@/lib/types";
+
 // ---- Types ----
 
 export type ActivityKind = "run" | "session_event";
@@ -53,6 +55,7 @@ export type ActivityEntrySession = {
   status: "active" | "idle" | "ended" | null;
   /** The session id this event belongs to — used to deep-link. */
   session_id: string;
+  session_label: string;
   summary: string;
   cost?: number;
   duration?: number;
@@ -114,6 +117,7 @@ type SessionRow = {
   last_event_summary: string | null;
   last_tool: string | null;
   title: string | null;
+  custom_label: string | null;
 };
 
 const MAX_ENTRIES = 200;
@@ -172,6 +176,7 @@ function entryFromRunRow(r: RunRow): ActivityEntryRun {
 
 function entryFromSessionRow(s: SessionRow): ActivityEntrySession {
   const ts = s.last_event_at ?? s.started_at;
+  const label = sessionDisplayLabel(s);
   const summary =
     s.last_event_summary ??
     (s.last_tool ? `Tool: ${s.last_tool}` : s.status === "active" ? "Active" : "Idle");
@@ -185,7 +190,8 @@ function entryFromSessionRow(s: SessionRow): ActivityEntrySession {
     type: s.last_event_type ?? "session",
     status: s.status,
     session_id: s.id,
-    summary: trim(summary),
+    session_label: label,
+    summary: trim(`${label} · ${summary}`),
     cost: s.total_cost_usd,
     raw: s,
   };
@@ -472,6 +478,7 @@ export function useActivityUnified(): UseActivityUnified {
           type: type.replace(/^session:/, ""),
           status,
           session_id: parsed.session_id,
+          session_label: parsed.session_id.slice(0, 8),
           summary: trim(summary),
           raw: parsed,
         });

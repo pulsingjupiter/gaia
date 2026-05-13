@@ -319,6 +319,7 @@ export type SessionRow = {
   project_id: string;
   transcript_path: string;
   title: string | null;
+  custom_label: string | null;
   status: SessionStatus;
   started_at: number;
   last_event_at: number;
@@ -587,6 +588,7 @@ function initSchema(db: Database.Database): void {
       project_id TEXT NOT NULL,
       transcript_path TEXT NOT NULL UNIQUE,
       title TEXT,
+      custom_label TEXT,
       status TEXT NOT NULL,
       started_at INTEGER NOT NULL,
       last_event_at INTEGER NOT NULL,
@@ -634,6 +636,19 @@ function initSchema(db: Database.Database): void {
   for (const [col, decl] of messageAdds) {
     try {
       db.exec(`ALTER TABLE messages ADD COLUMN ${col} ${decl}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column/i.test(msg)) throw err;
+    }
+  }
+
+  // Idempotent ADD COLUMNs for sessions — user-facing label overrides.
+  const sessionAdds: Array<[string, string]> = [
+    ["custom_label", "TEXT"],
+  ];
+  for (const [col, decl] of sessionAdds) {
+    try {
+      db.exec(`ALTER TABLE sessions ADD COLUMN ${col} ${decl}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!/duplicate column/i.test(msg)) throw err;
@@ -3054,6 +3069,26 @@ export function updateSession(
     .prepare(`UPDATE sessions SET ${setClauses.join(", ")} WHERE id = ?`)
     .run(...values);
   return getSession(id);
+}
+
+export function setSessionCustomLabel(
+  sessionId: string,
+  label: string | null,
+): void {
+  const customLabel = normalizeSessionCustomLabel(label);
+  getDb()
+    .prepare(`UPDATE sessions SET custom_label = ? WHERE id = ?`)
+    .run(customLabel, sessionId);
+}
+
+function normalizeSessionCustomLabel(label: string | null): string | null {
+  if (label === null) return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 120) {
+    throw new RangeError("custom_label must be 120 characters or fewer");
+  }
+  return trimmed;
 }
 
 /**

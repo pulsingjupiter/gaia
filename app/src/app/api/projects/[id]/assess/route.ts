@@ -24,6 +24,7 @@ import {
   listSessions,
   type SessionRow,
 } from "@/server/db.ts";
+import { sessionDisplayLabel } from "@/lib/types";
 import { extractJson, runPlanner } from "@/server/planner.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 
@@ -163,7 +164,7 @@ function listProjectFiles(projectPath: string): FileEntry[] {
 }
 
 function summariseSession(s: SessionRow): string {
-  const title = s.title?.trim() ?? "";
+  const title = sessionDisplayLabel(s);
   const sum = s.last_event_summary?.trim() ?? "";
   const short = sum.length > 200 ? sum.slice(0, 200) + "…" : sum;
   const parts: string[] = [];

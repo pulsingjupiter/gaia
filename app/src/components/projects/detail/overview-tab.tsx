@@ -36,7 +36,7 @@ import type {
   ProjectRow,
   UseProjectDetail,
 } from "@/lib/hooks/use-project-detail";
-import type { Employee } from "@/lib/types";
+import { sessionDisplayLabel, type Employee } from "@/lib/types";
 import { relativeTime } from "./format";
 
 type Props = {
@@ -551,7 +551,7 @@ function RecentActivityCard({
 
 function summariseSession(s: SessionRow, agentName: string | null): string {
   const persona = agentName?.trim() ? agentName.trim() : "Agent";
-  const title = s.title?.trim();
+  const title = sessionDisplayLabel(s);
   if (title) return `${persona} — ${title}`;
   const summary = s.last_event_summary?.trim();
   if (summary) return `${persona} — ${summary}`;

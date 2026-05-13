@@ -9,16 +9,18 @@
  *  - per-row Resume button + ⋯ menu (Copy command, Open transcript path)
  *  - live updates via `useProjectSessions` (which subscribes to SSE)
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Copy,
   ExternalLink,
   MoreHorizontal,
+  Pencil,
   Search,
 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { sessionDisplayLabel } from "@/lib/types";
 import { useProjectSessions } from "@/lib/hooks/use-project-sessions";
 import type { SessionRow } from "@/lib/hooks/use-project-sessions";
 import { useResumeSession } from "@/lib/hooks/use-resume-session";
@@ -54,20 +56,33 @@ const STATUS_COLORS: Record<SessionRow["status"], string> = {
 const DEFAULT_COLOR = "#5B5BD6";
 
 export function SessionsTab({ projectId, project }: Props) {
-  const { sessions, loading, error } = useProjectSessions(projectId);
+  const { sessions, loading, error, refresh } = useProjectSessions(projectId);
   const { copy } = useResumeSession();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [optimisticLabels, setOptimisticLabels] = useState<
+    Record<string, string | null>
+  >({});
+
+  const displayedSessions = useMemo(
+    () =>
+      sessions.map((s) =>
+        Object.prototype.hasOwnProperty.call(optimisticLabels, s.id)
+          ? { ...s, custom_label: optimisticLabels[s.id] ?? null }
+          : s,
+      ),
+    [sessions, optimisticLabels],
+  );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return sessions.filter((s) => {
+    return displayedSessions.filter((s) => {
       if (filter !== "all" && s.status !== filter) return false;
       if (term) {
         const hay =
-          (s.title ?? "").toLowerCase() +
+          sessionDisplayLabel(s).toLowerCase() +
           " " +
           s.id.toLowerCase() +
           " " +
@@ -76,10 +91,10 @@ export function SessionsTab({ projectId, project }: Props) {
       }
       return true;
     });
-  }, [sessions, filter, search]);
+  }, [displayedSessions, filter, search]);
 
   const counts = useMemo(() => {
-    return sessions.reduce(
+    return displayedSessions.reduce(
       (acc, s) => {
         acc.all += 1;
         acc[s.status] += 1;
@@ -87,13 +102,13 @@ export function SessionsTab({ projectId, project }: Props) {
       },
       { all: 0, active: 0, idle: 0, ended: 0 } as Record<Filter, number>,
     );
-  }, [sessions]);
+  }, [displayedSessions]);
 
   const latestSession = useMemo<SessionRow | null>(() => {
-    if (sessions.length === 0) return null;
+    if (displayedSessions.length === 0) return null;
     // Sessions arrive ordered by last_event_at DESC.
-    return sessions[0];
-  }, [sessions]);
+    return displayedSessions[0];
+  }, [displayedSessions]);
 
   async function handleCopyCommand(session: SessionRow): Promise<void> {
     setMenuOpenId(null);
@@ -122,6 +137,50 @@ export function SessionsTab({ projectId, project }: Props) {
       showToast("Transcript path copied");
     } else {
       showToast(session.transcript_path);
+    }
+  }
+
+  async function handleRenameSession(
+    session: SessionRow,
+    customLabel: string | null,
+  ): Promise<void> {
+    const nextLabel = customLabel?.trim() || null;
+    setOptimisticLabels((prev) => ({ ...prev, [session.id]: nextLabel }));
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ custom_label: customLabel }),
+      });
+      if (!res.ok) {
+        let message = `PATCH /api/sessions/${session.id} ${res.status}`;
+        try {
+          const data = (await res.json()) as { error?: string };
+          if (data.error) message = data.error;
+        } catch {
+          // Keep the status-based message.
+        }
+        throw new Error(message);
+      }
+      const data = (await res.json()) as { session?: SessionRow };
+      setOptimisticLabels((prev) => ({
+        ...prev,
+        [session.id]: data.session?.custom_label ?? nextLabel,
+      }));
+      await refresh();
+      setOptimisticLabels((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+      showToast(nextLabel ? "Session renamed" : "Session label cleared");
+    } catch (err) {
+      setOptimisticLabels((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+      showToast(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -194,13 +253,13 @@ export function SessionsTab({ projectId, project }: Props) {
       ) : null}
 
       <div className="card-surface overflow-hidden">
-        {loading && sessions.length === 0 ? (
+        {loading && displayedSessions.length === 0 ? (
           <div className="px-4 py-12 text-center text-xs text-muted">
             Loading sessions…
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center text-xs text-muted">
-            {sessions.length === 0
+            {displayedSessions.length === 0
               ? "No sessions yet. Run Claude Code in this project's directory to see them appear here."
               : "No sessions match your filter."}
           </div>
@@ -233,6 +292,7 @@ export function SessionsTab({ projectId, project }: Props) {
                   }
                   onCopy={() => handleCopyCommand(s)}
                   onOpenTranscript={() => handleOpenTranscript(s)}
+                  onRename={(label) => handleRenameSession(s, label)}
                 />
               ))}
             </tbody>
@@ -257,6 +317,7 @@ function SessionRow({
   setMenuOpen,
   onCopy,
   onOpenTranscript,
+  onRename,
 }: {
   session: SessionRow;
   projectId: string;
@@ -265,13 +326,43 @@ function SessionRow({
   setMenuOpen: (open: boolean) => void;
   onCopy: () => void;
   onOpenTranscript: () => void;
+  onRename: (label: string | null) => Promise<void>;
 }) {
-  const title = session.title?.trim() || `${session.id.slice(0, 8)}…`;
+  const title = sessionDisplayLabel(session);
   const activity = formatActivity(session);
   const accent = project?.color ?? DEFAULT_COLOR;
   const avatarName = project?.agent_name ?? project?.name ?? "Agent";
+  const [editing, setEditing] = useState(false);
+  const [draftLabel, setDraftLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const cancelBlurRef = useRef(false);
+
+  function beginRename(): void {
+    setDraftLabel(session.custom_label?.trim() || title);
+    setEditing(true);
+  }
+
+  async function commitRename(): Promise<void> {
+    if (savingRef.current) return;
+    const original = session.custom_label?.trim() || title;
+    if (draftLabel.trim() === original) {
+      setEditing(false);
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onRename(draftLabel);
+      setEditing(false);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
-    <tr className="border-t border-subtle hover:bg-surface-muted">
+    <tr className="group border-t border-subtle hover:bg-surface-muted">
       <td className="px-2 py-2">
         <AgentAvatar
           value={project?.agent_avatar ?? null}
@@ -287,13 +378,56 @@ function SessionRow({
           title={session.status}
         />
       </td>
-      <td className="px-3 py-2">
-        <Link
-          href={`/projects/${projectId}/sessions/${session.id}`}
-          className="font-medium text-primary hover:text-accent"
-        >
-          {title}
-        </Link>
+      <td className="max-w-[280px] px-3 py-2">
+        {editing ? (
+          <input
+            autoFocus
+            type="text"
+            value={draftLabel}
+            maxLength={120}
+            disabled={saving}
+            onChange={(e) => setDraftLabel(e.target.value)}
+            onBlur={() => {
+              if (cancelBlurRef.current) {
+                cancelBlurRef.current = false;
+                return;
+              }
+              void commitRename();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commitRename();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                cancelBlurRef.current = true;
+                setEditing(false);
+                setDraftLabel("");
+              }
+            }}
+            className="h-7 w-full min-w-[10rem] rounded-md border border-strong bg-white px-2 text-xs font-medium text-primary outline-none focus:border-accent"
+          />
+        ) : (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Link
+              href={`/projects/${projectId}/sessions/${session.id}`}
+              className="block min-w-0 truncate font-medium text-primary hover:text-accent"
+            >
+              {title}
+            </Link>
+            <button
+              type="button"
+              onClick={beginRename}
+              aria-label="Rename session"
+              className={cn(
+                "shrink-0 rounded-md p-1 text-muted opacity-0 transition",
+                "hover:bg-white hover:text-primary group-hover:opacity-100",
+              )}
+            >
+              <Pencil size={11} />
+            </button>
+          </div>
+        )}
       </td>
       <td
         className="max-w-[260px] truncate px-3 py-2 text-secondary"
@@ -341,6 +475,16 @@ function SessionRow({
               className="absolute right-0 top-7 z-10 min-w-[180px] rounded-lg border border-strong bg-white py-1 text-left shadow-md"
               onMouseLeave={() => setMenuOpen(false)}
             >
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  beginRename();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-secondary hover:bg-surface-muted"
+              >
+                <Pencil size={11} /> Rename
+              </button>
               <button
                 type="button"
                 onClick={onCopy}

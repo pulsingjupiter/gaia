@@ -151,3 +151,34 @@ export type Project = {
   created_at: number;
   updated_at: number;
 };
+
+export type SessionStatus = "active" | "idle" | "ended";
+
+export type Session = {
+  id: string;
+  project_id: string;
+  transcript_path: string;
+  title: string | null;
+  custom_label: string | null;
+  status: SessionStatus;
+  started_at: number;
+  last_event_at: number;
+  ended_at: number | null;
+  total_cost_usd: number;
+  total_tokens: number;
+  num_messages: number;
+  num_tool_uses: number;
+  last_event_type: string | null;
+  last_event_summary: string | null;
+  last_tool: string | null;
+  last_file: string | null;
+  bytes_read: number;
+};
+
+export function sessionDisplayLabel(
+  s: Pick<Session, "custom_label" | "title" | "id">,
+): string {
+  if (s.custom_label && s.custom_label.trim()) return s.custom_label.trim();
+  if (s.title && s.title.trim()) return s.title.trim();
+  return s.id.slice(0, 8);
+}

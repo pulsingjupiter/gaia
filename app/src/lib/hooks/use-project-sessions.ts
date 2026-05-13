@@ -14,29 +14,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { Session } from "@/lib/types";
 import { useSessionStream } from "./use-session-stream";
 
-export type SessionStatus = "active" | "idle" | "ended";
+export type SessionStatus = Session["status"];
 
-export type SessionRow = {
-  id: string;
-  project_id: string;
-  transcript_path: string;
-  title: string | null;
-  status: SessionStatus;
-  started_at: number;
-  last_event_at: number;
-  ended_at: number | null;
-  total_cost_usd: number;
-  total_tokens: number;
-  num_messages: number;
-  num_tool_uses: number;
-  last_event_type: string | null;
-  last_event_summary: string | null;
-  last_tool: string | null;
-  last_file: string | null;
-  bytes_read: number;
-};
+export type SessionRow = Session;
 
 export type UseProjectSessions = {
   sessions: SessionRow[];

@@ -10,6 +10,7 @@ import { ChevronRight, Copy, FileText, MoreHorizontal } from "lucide-react";
 import { ResumeSessionButton } from "@/components/shared/resume-session-button";
 import type { ProjectRow } from "@/lib/hooks/use-project-detail";
 import type { SessionRow } from "@/lib/hooks/use-session-detail";
+import { sessionDisplayLabel } from "@/lib/types";
 
 function statusTone(status: SessionRow["status"]): { dot: string; label: string; bg: string } {
   if (status === "active")
@@ -74,7 +75,7 @@ export function SessionHeader({
   }, [menuOpen]);
 
   const projectName = project?.name ?? "Project";
-  const sessionLabel = session.title ?? session.id.slice(0, 8);
+  const sessionLabel = sessionDisplayLabel(session);
 
   return (
     <header className="border-b border-subtle bg-white px-6 py-4">

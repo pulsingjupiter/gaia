@@ -14,6 +14,7 @@ import { ResumeSessionButton } from "@/components/shared/resume-session-button";
 import type { ProjectRow } from "@/lib/hooks/use-projects";
 import type { SessionRow } from "@/lib/hooks/use-project-sessions";
 import { useRecentSessions } from "@/lib/hooks/use-recent-sessions";
+import { sessionDisplayLabel } from "@/lib/types";
 
 const STATUS_COLORS: Record<SessionRow["status"], string> = {
   active: "var(--status-online)",
@@ -31,12 +32,6 @@ function relativeTime(ts: number): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   return `${d}d ago`;
-}
-
-function sessionLabel(s: SessionRow): string {
-  const t = s.title?.trim();
-  if (t) return t;
-  return `${s.id.slice(0, 8)}…`;
 }
 
 export function RecentSessions() {
@@ -94,7 +89,7 @@ export function RecentSessions() {
                     {projectName}
                   </div>
                   <div className="truncate text-[10px] text-muted">
-                    {sessionLabel(s)}
+                    {sessionDisplayLabel(s)}
                   </div>
                 </div>
                 <div
