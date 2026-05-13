@@ -1,11 +1,12 @@
 /**
  * POST /api/projects/[id]/assess/apply
  *
- * Body: the user-curated AssessProposal (description / milestones / tasks)
+ * Body: the user-curated AssessProposal (description / brief / milestones / tasks)
  * returned by /api/projects/[id]/assess and edited in the preview modal.
  * Writes are wrapped in a single SQLite transaction.
  *
  * - description: applied with updateProject() if non-empty.
+ * - brief_markdown: applied with updateProject() if supplied and non-empty.
  * - milestones: inserted via insertMilestone() (status="active").
  * - tasks: inserted via insertTask() (status="todo"). A task's
  *   `milestone_idx` (0-based) is resolved to the just-inserted milestone's
@@ -38,6 +39,7 @@ type IncomingTask = {
 
 type ApplyBody = {
   description?: unknown;
+  brief_markdown?: unknown;
   milestones?: unknown;
   tasks?: unknown;
 };
@@ -79,6 +81,10 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     typeof body.description === "string" && body.description.trim()
       ? body.description.trim()
       : null;
+  const briefMarkdown =
+    typeof body.brief_markdown === "string" && body.brief_markdown.trim()
+      ? body.brief_markdown.trim()
+      : null;
   const milestonesIn: IncomingMilestone[] = Array.isArray(body.milestones)
     ? (body.milestones as IncomingMilestone[])
     : [];
@@ -90,12 +96,21 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   let createdMilestones = 0;
   let createdTasks = 0;
   let updatedDescription = false;
+  let updatedBrief = false;
 
   const tx = db.transaction(() => {
-    // Description: only overwrite if the user supplied something new.
+    // Project fields: only overwrite if the user supplied non-empty values.
+    const projectPatch: Parameters<typeof updateProject>[1] = {};
     if (description !== null && description !== project.description) {
-      updateProject(id, { description });
+      projectPatch.description = description;
       updatedDescription = true;
+    }
+    if (briefMarkdown !== null && briefMarkdown !== project.brief_markdown) {
+      projectPatch.brief_markdown = briefMarkdown;
+      updatedBrief = true;
+    }
+    if (Object.keys(projectPatch).length > 0) {
+      updateProject(id, projectPatch);
     }
 
     // Milestones — track inserted ids in order for milestone_idx lookup.
@@ -159,6 +174,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   return Response.json({
     created: {
       description: updatedDescription,
+      brief_markdown: updatedBrief,
       milestones: createdMilestones,
       tasks: createdTasks,
     },

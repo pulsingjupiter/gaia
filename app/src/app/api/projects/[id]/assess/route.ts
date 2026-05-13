@@ -2,7 +2,7 @@
  * POST /api/projects/[id]/assess
  *
  * Gaia AI Assess — auto-assesses a project to propose a description,
- * milestones, and tasks the user can review before saving. Read-only:
+ * brief, milestones, and tasks the user can review before saving. Read-only:
  * does NOT mutate the DB. Apply is a separate POST /assess/apply.
  *
  * Context gathered (token-budgeted):
@@ -99,6 +99,7 @@ export type AssessProposalMilestone = {
 
 export type AssessProposal = {
   description: string;
+  brief_markdown: string;
   milestones: AssessProposalMilestone[];
   tasks: AssessProposalTask[];
 };
@@ -114,10 +115,11 @@ function listProjectFiles(projectPath: string): FileEntry[] {
   } catch {
     return [];
   }
-  // Sort: directories first, then files; alphabetical within each.
+  // Sort: project context markdown first, then directories, then files;
+  // alphabetical within each group.
   entries.sort((a, b) => {
-    const da = a.isDirectory() ? 0 : 1;
-    const db = b.isDirectory() ? 0 : 1;
+    const da = filePriority(a);
+    const db = filePriority(b);
     if (da !== db) return da - db;
     return a.name.localeCompare(b.name);
   });
@@ -161,6 +163,21 @@ function listProjectFiles(projectPath: string): FileEntry[] {
     out.push({ kind: "file", name: ent.name, head, binary });
   }
   return out;
+}
+
+function filePriority(ent: fs.Dirent): number {
+  if (ent.isFile() && isPriorityMarkdown(ent.name)) return 0;
+  if (ent.isDirectory()) return 1;
+  return 2;
+}
+
+function isPriorityMarkdown(name: string): boolean {
+  const upper = name.toUpperCase();
+  return (
+    upper === "README.MD" ||
+    (upper.endsWith(".MD") &&
+      (upper.includes("PLAN") || upper.includes("BRIEF")))
+  );
 }
 
 function summariseSession(s: SessionRow): string {
@@ -222,7 +239,7 @@ function composeAssessPrompt(args: {
           .join(", ");
 
   return [
-    `You are an expert project assessor. Read the project context and propose a 1-2 sentence description, a few milestones, and a handful of starter tasks for the user to review.`,
+    `You are an expert project assessor. Read the project context and propose a 1-2 sentence description, a longer agent-facing project brief, a few milestones, and a handful of starter tasks for the user to review.`,
     ``,
     `# Project`,
     `- Name: ${args.name}`,
@@ -241,6 +258,7 @@ function composeAssessPrompt(args: {
     `Respond with VALID JSON ONLY. No prose, no markdown fences. Schema:`,
     `{`,
     `  "description": string,           // 1-2 sentence project description`,
+    `  "brief_markdown": string,        // 3-15 markdown paragraphs, or "" if no useful context exists`,
     `  "milestones": [                   // 2-5 milestones, ordered earliest first`,
     `    { "title": string, "due_at": string | null }   // due_at is ISO YYYY-MM-DD or null`,
     `  ],`,
@@ -255,6 +273,7 @@ function composeAssessPrompt(args: {
     ``,
     `Rules:`,
     `- Do NOT duplicate existing milestones or task titles listed above.`,
+    `- Also produce a \`brief_markdown\` field containing 3-15 paragraphs of markdown that captures the project's purpose, key context, constraints, and any conventions or facts agents working on this project should know. Pull liberally from the files you read — especially any top-level \`*PLAN*.md\`, \`*BRIEF*.md\`, or \`README.md\` files. The brief is read by AI agents at the top of every prompt, so write it for an AI audience: dense, factual, no fluff. Avoid duplicating the short \`description\` field — that is the 1-2 sentence summary; the brief is the long-form context.`,
     `- If the project looks empty, propose discovery/scaffolding tasks.`,
     `- Keep titles short and action-oriented.`,
     `- Start your response with \`{\`.`,
@@ -285,6 +304,8 @@ function validateAssessProposal(raw: unknown): AssessProposal | null {
   const obj = raw as Record<string, unknown>;
   const description =
     typeof obj.description === "string" ? obj.description.trim() : "";
+  const briefMarkdown =
+    typeof obj.brief_markdown === "string" ? obj.brief_markdown.trim() : "";
   const milestonesRaw = Array.isArray(obj.milestones) ? obj.milestones : [];
   const milestones: AssessProposalMilestone[] = [];
   for (const mRaw of milestonesRaw) {
@@ -316,8 +337,10 @@ function validateAssessProposal(raw: unknown): AssessProposal | null {
       milestone_idx: milestoneIdx,
     });
   }
-  if (!description && milestones.length === 0 && tasks.length === 0) return null;
-  return { description, milestones, tasks };
+  if (!description && !briefMarkdown && milestones.length === 0 && tasks.length === 0) {
+    return null;
+  }
+  return { description, brief_markdown: briefMarkdown, milestones, tasks };
 }
 
 export async function POST(

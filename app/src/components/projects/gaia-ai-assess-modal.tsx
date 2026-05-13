@@ -6,11 +6,11 @@
  * Flow:
  *  1. "confirm" — small explainer + Run / Cancel buttons.
  *  2. "running" — spinner while POST /assess works (30–60s).
- *  3. "review"  — editable description + checkbox list of milestones and
- *     tasks. User can deselect items they don't want.
+ *  3. "review"  — editable description and brief + checkbox list of
+ *     milestones and tasks. User can deselect items they don't want.
  *  4. "error"   — surfaced inline with a Retry button.
  *
- * Apply: POST /assess/apply with only the checked items + final description.
+ * Apply: POST /assess/apply with only the checked items + final project fields.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -47,6 +47,7 @@ type AssessMilestone = {
 
 type AssessProposal = {
   description: string;
+  brief_markdown: string;
   milestones: AssessMilestone[];
   tasks: AssessTask[];
 };
@@ -61,6 +62,8 @@ export function GaiaAiAssessModal({
   const [phase, setPhase] = useState<Phase>("confirm");
   const [proposal, setProposal] = useState<AssessProposal | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [briefDraft, setBriefDraft] = useState("");
+  const [applyBrief, setApplyBrief] = useState(false);
   const [milestoneChecks, setMilestoneChecks] = useState<boolean[]>([]);
   const [taskChecks, setTaskChecks] = useState<boolean[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -73,6 +76,8 @@ export function GaiaAiAssessModal({
       setPhase("confirm");
       setProposal(null);
       setDescriptionDraft("");
+      setBriefDraft("");
+      setApplyBrief(false);
       setMilestoneChecks([]);
       setTaskChecks([]);
       setErrorMsg(null);
@@ -120,6 +125,8 @@ export function GaiaAiAssessModal({
       }
       setProposal(data.proposal);
       setDescriptionDraft(data.proposal.description ?? "");
+      setBriefDraft(data.proposal.brief_markdown ?? "");
+      setApplyBrief((data.proposal.brief_markdown ?? "").trim().length > 0);
       setMilestoneChecks(data.proposal.milestones.map(() => true));
       setTaskChecks(data.proposal.tasks.map(() => true));
       setPhase("review");
@@ -151,6 +158,7 @@ export function GaiaAiAssessModal({
         t.milestone_idx != null ? indexRemap.get(t.milestone_idx) ?? null : null;
       keptTasks.push({ ...t, milestone_idx: remapped });
     });
+    const briefToApply = applyBrief ? briefDraft.trim() : "";
 
     try {
       const res = await fetch(
@@ -160,6 +168,7 @@ export function GaiaAiAssessModal({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             description: descriptionDraft.trim(),
+            ...(briefToApply ? { brief_markdown: briefToApply } : {}),
             milestones: keptMilestones,
             tasks: keptTasks,
           }),
@@ -183,6 +192,8 @@ export function GaiaAiAssessModal({
     milestoneChecks,
     taskChecks,
     descriptionDraft,
+    briefDraft,
+    applyBrief,
     onApplied,
     onClose,
   ]);
@@ -194,7 +205,8 @@ export function GaiaAiAssessModal({
   const hasAnythingToApply =
     keptMilestoneCount > 0 ||
     keptTaskCount > 0 ||
-    descriptionDraft.trim().length > 0;
+    descriptionDraft.trim().length > 0 ||
+    (applyBrief && briefDraft.trim().length > 0);
 
   return (
     <div
@@ -247,10 +259,14 @@ export function GaiaAiAssessModal({
             <ReviewPanel
               proposal={proposal}
               descriptionDraft={descriptionDraft}
+              briefDraft={briefDraft}
+              applyBrief={applyBrief}
               milestoneChecks={milestoneChecks}
               taskChecks={taskChecks}
               applyError={errorMsg}
               onDescription={setDescriptionDraft}
+              onBrief={setBriefDraft}
+              onToggleBrief={() => setApplyBrief((v) => !v)}
               onToggleMilestone={(i) =>
                 setMilestoneChecks((arr) =>
                   arr.map((v, idx) => (idx === i ? !v : v)),
@@ -330,7 +346,7 @@ export function GaiaAiAssessModal({
                 )}
                 {applying
                   ? "Applying…"
-                  : `Apply Selected (${keptMilestoneCount} milestone${keptMilestoneCount === 1 ? "" : "s"}, ${keptTaskCount} task${keptTaskCount === 1 ? "" : "s"})`}
+                  : `Apply Selected (${keptMilestoneCount} milestone${keptMilestoneCount === 1 ? "" : "s"}, ${keptTaskCount} task${keptTaskCount === 1 ? "" : "s"}${applyBrief && briefDraft.trim() ? ", brief" : ""})`}
               </button>
             </>
           )}
@@ -349,7 +365,7 @@ function ConfirmPanel() {
     <div className="space-y-3">
       <p className="text-sm text-primary">
         Gaia will read this project&apos;s files and recent sessions, then
-        propose a description, milestones, and tasks. Run now?
+        propose a description, brief, milestones, and tasks. Run now?
       </p>
       <ul className="space-y-1 text-xs text-secondary">
         <li>· Reads up to 30 top-level files (first ~1 KB each).</li>
@@ -399,19 +415,27 @@ function ErrorPanel({
 function ReviewPanel({
   proposal,
   descriptionDraft,
+  briefDraft,
+  applyBrief,
   milestoneChecks,
   taskChecks,
   applyError,
   onDescription,
+  onBrief,
+  onToggleBrief,
   onToggleMilestone,
   onToggleTask,
 }: {
   proposal: AssessProposal;
   descriptionDraft: string;
+  briefDraft: string;
+  applyBrief: boolean;
   milestoneChecks: boolean[];
   taskChecks: boolean[];
   applyError: string | null;
   onDescription: (v: string) => void;
+  onBrief: (v: string) => void;
+  onToggleBrief: () => void;
   onToggleMilestone: (i: number) => void;
   onToggleTask: (i: number) => void;
 }) {
@@ -436,6 +460,34 @@ function ReviewPanel({
         />
         <p className="mt-1 text-[10px] text-muted">
           Leave empty to skip updating the description.
+        </p>
+      </section>
+
+      <section>
+        <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+          Brief
+        </h4>
+        <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs font-medium text-secondary">
+          <input
+            type="checkbox"
+            checked={applyBrief}
+            onChange={onToggleBrief}
+            className="accent-accent"
+          />
+          Apply brief to project Settings
+        </label>
+        <textarea
+          value={briefDraft}
+          onChange={(e) => onBrief(e.target.value)}
+          rows={12}
+          placeholder="Long-form markdown context for agents"
+          className={cn(
+            "w-full resize-y rounded-lg border border-strong bg-white px-3 py-2 text-sm leading-relaxed text-primary focus:border-accent focus:outline-none",
+            applyBrief ? "" : "bg-surface-muted opacity-60",
+          )}
+        />
+        <p className="mt-1 text-[10px] text-muted">
+          Uncheck to skip updating the Settings brief.
         </p>
       </section>
 
