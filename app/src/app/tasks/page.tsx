@@ -8,9 +8,8 @@
  *
  * The board owns the fetch and reports counts up via `onCountsChange` so the
  * KPI strip stays in sync without a second request. The "This week" badge is
- * informational only — Timeline / Calendar tabs are deferred to V5; we
- * surface them with a "Coming in V5" tooltip rather than showing inert UI
- * without explanation.
+ * informational only; Board, Timeline, and Calendar each own their fetches
+ * and report counts up as needed.
  *
  * Project filter: a "Project: …" dropdown in the tabs row scopes the board
  * to a single project. State is persisted to `?project=<id>` so links and
@@ -25,6 +24,7 @@ import { SprintKpiStrip } from "@/components/sprint/kpi-strip";
 import { KanbanBoard, type KanbanCounts } from "@/components/sprint/kanban-board";
 import { AddTaskModal } from "@/components/tasks/add-task-modal";
 import { TaskCalendar } from "@/components/tasks/task-calendar";
+import { TaskTimeline } from "@/components/tasks/task-timeline";
 import { useProjects, type ProjectRow } from "@/lib/hooks/use-projects";
 import { useMilestones } from "@/lib/hooks/use-milestones";
 import { useEmployees } from "@/components/employees/employees-context";
@@ -40,11 +40,11 @@ const DUE_LABEL: Record<DueParam | "any", string> = {
   none: "No due date",
 };
 
-type TabView = "board" | "calendar";
+type TabView = "board" | "calendar" | "timeline";
 
 const TABS: { label: string; tooltip?: string; view?: TabView }[] = [
   { label: "Board", view: "board" },
-  { label: "Timeline", tooltip: "Coming in V5" },
+  { label: "Timeline", view: "timeline" },
   { label: "Calendar", view: "calendar" },
 ];
 
@@ -239,6 +239,21 @@ export default function TasksPage() {
             milestoneNamesById={milestoneNamesById}
             onCountsChange={setCounts}
             refreshKey={refreshKey}
+          />
+        ) : activeTab === "timeline" ? (
+          <TaskTimeline
+            projectFilter={selectedProject?.id ?? null}
+            milestoneFilter={milestoneParam}
+            dueFilter={dueParam}
+            refreshKey={refreshKey}
+            onCountsChange={(timelineCounts) =>
+              setCounts({
+                planned: timelineCounts.total,
+                inProgress: timelineCounts.in_progress,
+                review: timelineCounts.review,
+                completed: timelineCounts.done,
+              })
+            }
           />
         ) : (
           <TaskCalendar
