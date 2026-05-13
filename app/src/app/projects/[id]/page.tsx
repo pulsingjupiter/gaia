@@ -2,7 +2,7 @@
 /**
  * /projects/[id] — single-project detail page with 6 tabs.
  *
- * Tab routing: persisted to `?tab=overview|milestones|backlog|sessions|files|settings`
+ * Tab routing: persisted to `?tab=overview|milestones|tasks|sessions|files|settings`
  * via `router.replace` so deep-links and reloads keep the user in place. The
  * `/projects/[id]/sessions/[sid]` segment is its own page (Wave 2C); clicking
  * a session row navigates away to that page.
@@ -52,6 +52,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
 const VALID_TABS = new Set<TabId>(TABS.map((t) => t.id));
 
 function parseTab(raw: string | null): TabId {
+  if (raw === "tasks") return "backlog";
   if (raw && (VALID_TABS as Set<string>).has(raw)) return raw as TabId;
   return "overview";
 }
@@ -80,7 +81,7 @@ export default function ProjectDetailPage({
     (next: TabId) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
       if (next === "overview") params.delete("tab");
-      else params.set("tab", next);
+      else params.set("tab", next === "backlog" ? "tasks" : next);
       const qs = params.toString();
       router.replace(qs ? `/projects/${id}?${qs}` : `/projects/${id}`, {
         scroll: false,

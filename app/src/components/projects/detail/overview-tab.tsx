@@ -438,7 +438,7 @@ function ActiveMilestonesCard({
             return (
               <li key={m.id}>
                 <Link
-                  href={`/tasks?project=${encodeURIComponent(projectId)}&milestone=${encodeURIComponent(m.id)}`}
+                  href={`/projects/${encodeURIComponent(projectId)}?tab=tasks&milestone_id=${encodeURIComponent(m.id)}`}
                   className="block rounded-lg border border-subtle px-3 py-2 hover:bg-surface-muted"
                 >
                   <div className="flex flex-wrap items-center gap-2">

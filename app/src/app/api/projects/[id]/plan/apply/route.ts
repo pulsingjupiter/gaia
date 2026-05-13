@@ -3,8 +3,8 @@
  *
  * Body: the (possibly edited) PlanProposal returned by /api/projects/[id]/plan.
  * Inserts milestones + their tasks under a single SQLite transaction. Tasks
- * land in the project's backlog (`status='backlog'`) so the user can review
- * and promote them as they go.
+ * land in the project's todo queue (`status='todo'`) because the preview modal
+ * is the review step.
  */
 import {
   getDb,
@@ -132,7 +132,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
               : null,
           employee_id: employeeId,
           priority: normalisePriority(t.priority),
-          status: "backlog",
+          status: "todo",
           project_id: id,
           milestone_id: milestone.id,
           due_date: taskDue,

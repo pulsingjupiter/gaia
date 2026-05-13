@@ -5,7 +5,8 @@
  * Layout: top toolbar (+ Add Task, priority filter, employee filter, sort)
  * + a row-style task list. NOT a kanban — kanban is the global Sprint page.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowUpRight,
   Plus,
@@ -54,6 +55,8 @@ const PRIORITY_TONE: Record<TaskPriority, string> = {
 };
 
 export function BacklogTab({ projectId, onPlanWithClaude }: Props) {
+  const searchParams = useSearchParams();
+  const milestoneIdParam = searchParams?.get("milestone_id") ?? null;
   const { tasks, loading, error, add, update, remove, promote } =
     useProjectBacklog(projectId);
   const { employees } = useEmployees();
@@ -64,9 +67,15 @@ export function BacklogTab({ projectId, onPlanWithClaude }: Props) {
     "all",
   );
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
-  const [milestoneFilter, setMilestoneFilter] = useState<string>("all");
+  const [milestoneFilter, setMilestoneFilter] = useState<string>(
+    milestoneIdParam || "all",
+  );
   const [sort, setSort] = useState<SortKey>("newest");
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMilestoneFilter(milestoneIdParam || "all");
+  }, [milestoneIdParam]);
 
   const employeeById = useMemo(() => {
     const map = new Map<string, (typeof employees)[number]>();

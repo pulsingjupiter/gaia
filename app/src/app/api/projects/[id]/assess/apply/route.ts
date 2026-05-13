@@ -7,7 +7,7 @@
  *
  * - description: applied with updateProject() if non-empty.
  * - milestones: inserted via insertMilestone() (status="active").
- * - tasks: inserted via insertTask() (status="backlog"). A task's
+ * - tasks: inserted via insertTask() (status="todo"). A task's
  *   `milestone_idx` (0-based) is resolved to the just-inserted milestone's
  *   id; out-of-range indices fall through to no milestone.
  */
@@ -136,7 +136,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         description: null,
         employee_id: null,
         priority: normalisePriority(t.priority),
-        status: "backlog",
+        status: "todo",
         project_id: id,
         milestone_id: milestoneId,
         due_date: null,
