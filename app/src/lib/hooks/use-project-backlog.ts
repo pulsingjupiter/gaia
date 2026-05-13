@@ -89,6 +89,7 @@ export function useProjectBacklog(
     try {
       const params = new URLSearchParams();
       params.set("project_id", projectId);
+      params.set("include_all", "1");
       const res = await fetch(`/api/backlog?${params.toString()}`, {
         cache: "no-store",
       });
