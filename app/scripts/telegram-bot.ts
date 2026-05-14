@@ -44,6 +44,18 @@ const SESSIONS_FILE_PATH = path.join(
 
 const NL = "\n";
 
+async function sendChatAction(chatId: number, action: "typing"): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/sendChatAction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, action }),
+    });
+  } catch {
+    // best-effort — never block on this
+  }
+}
+
 async function sendMessage(chatId: number, text: string): Promise<void> {
   if (!text || text.trim() === "") return;
   const MAX_LENGTH = 4096;
@@ -342,9 +354,20 @@ async function handleNaturalLanguage(
 
   const gaiaDir = path.join(PATHS.agentsDir, "gaia");
 
-  const args: string[] = ["-p"];
+  // Default to Sonnet for Telegram chat — Opus burns subscription too fast
+  // for casual queries. Override with GAIA_BOT_CLAUDE_MODEL env if needed.
+  const model = process.env.GAIA_BOT_CLAUDE_MODEL || "sonnet";
+
+  const args: string[] = ["-p", "--model", model];
   if (sessionId) args.push("--resume", sessionId);
   args.push("--tools", "Bash", "--append-system-prompt", snapshot, text);
+
+  // Show "typing…" in Telegram while Claude is thinking. The action expires
+  // after ~5s, so refresh on an interval until the child exits.
+  void sendChatAction(chatId, "typing");
+  const typingTimer = setInterval(() => {
+    void sendChatAction(chatId, "typing");
+  }, 4000);
 
   const child = spawn("claude", args, { cwd: gaiaDir, timeout: 60_000 });
 
@@ -380,6 +403,7 @@ async function handleNaturalLanguage(
   });
 
   child.on("close", async (code) => {
+    clearInterval(typingTimer);
     if (code === 0) {
       const reply = stdout.trim();
       if (reply) {
@@ -394,6 +418,7 @@ async function handleNaturalLanguage(
   });
 
   child.on("error", async (err) => {
+    clearInterval(typingTimer);
     await sendMessage(chatId, `Claude failed to start: ${err.message}`);
   });
 }
