@@ -14,6 +14,11 @@ import {
   updateProject,
   type UpdateProjectPatch,
 } from "@/server/db.ts";
+import {
+  exportProjectToFiles,
+  importProjectFromFiles,
+  projectHasGaiaDir,
+} from "@/server/project-files.ts";
 import { ensureSeeded } from "@/server/seed.ts";
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -44,18 +49,30 @@ const ALLOWED_PATCH_KEYS: ReadonlyArray<keyof UpdateProjectPatch> = [
   "brief_markdown",
   "repo_url",
   "archived",
+  "collaborative",
 ];
 
 export async function PATCH(req: Request, ctx: RouteCtx): Promise<Response> {
   ensureSeeded();
   const { id } = await ctx.params;
-  if (!getProject(id)) return notFound();
+  const project = getProject(id);
+  if (!project) return notFound();
+
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
+
+  // If enabling collaborative mode, check for repo_url first.
+  if (body.collaborative && !project.repo_url && !body.repo_url) {
+    return Response.json(
+      { error: "collaborative requires repo_url" },
+      { status: 400 },
+    );
+  }
+
   const patch: UpdateProjectPatch = {};
   for (const key of ALLOWED_PATCH_KEYS) {
     if (key in body) {
@@ -78,8 +95,21 @@ export async function PATCH(req: Request, ctx: RouteCtx): Promise<Response> {
       (patch as Record<string, unknown>)[key] = body[key];
     }
   }
-  const project = updateProject(id, patch);
-  return Response.json({ project });
+  const updatedProject = updateProject(id, patch);
+
+  // If toggling collaborative from 0 to 1, trigger initial sync.
+  const wasCollaborative = project.collaborative === 1;
+  const isCollaborative = body.collaborative === true || body.collaborative === 1;
+  if (!wasCollaborative && isCollaborative) {
+    const hasGaia = await projectHasGaiaDir(id);
+    if (hasGaia) {
+      await importProjectFromFiles(id);
+    } else {
+      await exportProjectToFiles(id);
+    }
+  }
+
+  return Response.json({ project: updatedProject });
 }
 
 export async function DELETE(_req: Request, ctx: RouteCtx): Promise<Response> {

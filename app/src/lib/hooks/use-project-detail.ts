@@ -24,6 +24,7 @@ export type ProjectRow = {
   archived: 0 | 1;
   created_at: number;
   updated_at: number;
+  collaborative: 0 | 1;
 };
 
 export type ProjectStats = {
@@ -45,6 +46,7 @@ export type UpdateProjectPatch = Partial<{
   brief_markdown: string | null;
   repo_url: string | null;
   archived: boolean | 0 | 1;
+  collaborative: boolean | 0 | 1;
 }>;
 
 export type UseProjectDetail = {

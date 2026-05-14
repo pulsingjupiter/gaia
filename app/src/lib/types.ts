@@ -148,6 +148,7 @@ export type Project = {
   brief_markdown: string | null;
   repo_url: string | null;
   archived: 0 | 1;
+  collaborative: 0 | 1;
   created_at: number;
   updated_at: number;
 };

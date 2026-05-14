@@ -68,6 +68,9 @@ export function SettingsTab({ project, update, archive }: Props) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [collaborative, setCollaborative] = useState(project.collaborative === 1);
+  const [savingCollaboration, setSavingCollaboration] = useState(false);
+  const [collaborationError, setCollaborationError] = useState<string | null>(null);
 
   // Keep state in sync if the project ref changes (e.g. external refresh).
   useEffect(() => {
@@ -80,6 +83,8 @@ export function SettingsTab({ project, update, archive }: Props) {
     setBrief(project.brief_markdown ?? "");
     setRepoUrl(project.repo_url ?? "");
     setRepoError(null);
+    setCollaborative(project.collaborative === 1);
+    setCollaborationError(null);
   }, [project]);
 
   const dirty =
@@ -130,6 +135,45 @@ export function SettingsTab({ project, update, archive }: Props) {
     if (updated) {
       setBriefToast("Brief saved");
       window.setTimeout(() => setBriefToast(null), 2000);
+    }
+  }
+
+  async function handleToggleCollaborative(checked: boolean) {
+    setSavingCollaboration(true);
+    setCollaborationError(null);
+    const updated = await update({ collaborative: checked });
+    setSavingCollaboration(false);
+    if (updated) {
+      setCollaborative(updated.collaborative === 1);
+    } else {
+      // Revert on failure
+      setCollaborative(!checked);
+      setCollaborationError("Failed to update setting. Is the repository URL set?");
+    }
+  }
+
+  const [syncBusy, setSyncBusy] = useState<"pull" | "push" | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  async function handleSyncAction(action: "pull" | "push") {
+    setSyncBusy(action);
+    setSyncStatus(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/sync/${action}`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        setSyncStatus(`${action === "pull" ? "Pull" : "Push"} failed: ${data.error ?? res.statusText}`);
+      } else if (action === "push" && data.no_changes) {
+        setSyncStatus("No local changes to push.");
+      } else {
+        setSyncStatus(action === "pull" ? "Pulled — reload the page to see updated tasks." : "Pushed.");
+      }
+    } catch (err) {
+      setSyncStatus(`${action} failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSyncBusy(null);
     }
   }
 
@@ -228,6 +272,73 @@ export function SettingsTab({ project, update, archive }: Props) {
           </div>
         </div>
       </form>
+
+      <hr className="border-subtle" />
+
+      <div className="space-y-3">
+        <div>
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+            Collaboration
+          </h2>
+        </div>
+        <Field label="Sync project state to git repo">
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="collaborative-toggle"
+              checked={collaborative}
+              disabled={!project.repo_url || savingCollaboration}
+              onChange={(e) => handleToggleCollaborative(e.target.checked)}
+              className="mr-2 h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
+            />
+            <label htmlFor="collaborative-toggle" className="text-sm text-primary">
+              {savingCollaboration ? "Saving..." : "Enable git-based collaboration"}
+            </label>
+          </div>
+          {!project.repo_url ? (
+            <p className="mt-1 text-[11px] font-medium text-muted">
+              Add a repository URL first.
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-muted">
+              {collaborative
+                ? "Milestones, tasks, and other project details are synced to the repo."
+                : "When enabled, milestones, tasks, description, and brief will be mirrored to .gaia/* files inside the repo and synced via git."}
+            </p>
+          )}
+          {collaborationError && (
+            <p className="mt-1 text-[11px] font-medium text-status-error">
+              {collaborationError}
+            </p>
+          )}
+        </Field>
+
+        {collaborative && (
+          <div className="space-y-3 rounded-lg border border-strong bg-white p-4">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={syncBusy !== null}
+                onClick={() => handleSyncAction("pull")}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted disabled:opacity-50"
+              >
+                {syncBusy === "pull" ? "Pulling…" : "Pull from git"}
+              </button>
+              <button
+                type="button"
+                disabled={syncBusy !== null}
+                onClick={() => handleSyncAction("push")}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-strong bg-white px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-muted disabled:opacity-50"
+              >
+                {syncBusy === "push" ? "Pushing…" : "Push to git"}
+              </button>
+            </div>
+            <p className="text-[11px] text-muted">
+              {syncStatus ?? "Pull updates from the repo or push your local changes."}
+            </p>
+          </div>
+        )}
+      </div>
 
       <hr className="border-subtle" />
 

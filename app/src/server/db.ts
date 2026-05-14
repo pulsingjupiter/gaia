@@ -1,4 +1,11 @@
 /**
+ * This file was partially updated by an AI tool.
+ *
+ * Description of changes:
+ * - Added `notifyProjectStateChanged` function to mirror DB changes to the filesystem for collaborative projects.
+ * - This function is called from `updateProject`, `updateTask`, `deleteTask`, `insertMilestone`, `updateMilestone`, and `deleteMilestone`.
+ */
+/**
  * SQLite persistence for Agent Site.
  *
  * Singleton DB at app/data/gaia.db. Schema is created idempotently on first
@@ -18,6 +25,7 @@ import {
   type RepoUrlInfo,
 } from "../lib/repo-url.ts";
 import { isPlannerCli, type PlannerCli } from "../lib/types.ts";
+import { deleteTaskFile, writeMilestonesFile, writeProjectFile, writeTaskFile } from "./project-files.ts";
 
 export { parseRepoUrl, type RepoUrlInfo };
 
@@ -310,6 +318,7 @@ export type ProjectRow = {
   archived: 0 | 1;
   created_at: number;
   updated_at: number;
+  collaborative: 0 | 1;
 };
 
 export type SessionStatus = "active" | "idle" | "ended";
@@ -736,6 +745,7 @@ function initSchema(db: Database.Database): void {
   const projectAdds: Array<[string, string]> = [
     ["brief_markdown", "TEXT"],
     ["repo_url", "TEXT"],
+    ["collaborative", "INTEGER NOT NULL DEFAULT 0"],
   ];
   for (const [col, decl] of projectAdds) {
     try {
@@ -2005,7 +2015,11 @@ export function insertTask(input: InsertTaskInput): TaskRow {
       input.recurrence_anchor ?? null,
       input.parent_task_id ?? null,
     );
-  return getTask(id)!;
+    const task = getTask(id)!;
+    if (task.project_id) {
+        notifyProjectStateChanged(task.project_id, "task", task.id);
+    }
+  return task;
 }
 
 export type UpdateTaskPatch = Partial<{
@@ -2053,6 +2067,7 @@ const TASK_PATCH_KEYS = [
 export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefined {
   const setClauses: string[] = [];
   const values: unknown[] = [];
+  const oldTask = getTask(id);
   for (const key of TASK_PATCH_KEYS) {
     if (key in patch) {
       let v: unknown = (patch as Record<string, unknown>)[key];
@@ -2066,7 +2081,14 @@ export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefi
   getDb()
     .prepare(`UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?`)
     .run(...values);
-  return getTask(id);
+    const updatedTask = getTask(id);
+    if (updatedTask?.project_id) {
+        if(oldTask?.milestone_id !== updatedTask.milestone_id) {
+            notifyProjectStateChanged(updatedTask.project_id, "milestones", undefined);
+        }
+        notifyProjectStateChanged(updatedTask.project_id, "task", id);
+    }
+  return updatedTask;
 }
 
 /**
@@ -2074,7 +2096,13 @@ export function updateTask(id: string, patch: UpdateTaskPatch): TaskRow | undefi
  * should prefer `updateTask(id, { status: 'archived' })`.
  */
 export function deleteTask(id: string): boolean {
+    const task = getTask(id);
+    if (!task) return false;
+
   const info = getDb().prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
+  if (info.changes > 0 && task.project_id) {
+    notifyProjectStateChanged(task.project_id, "task-delete", id);
+  }
   return info.changes > 0;
 }
 
@@ -2238,6 +2266,7 @@ export function insertMilestone(input: InsertMilestoneInput): MilestoneRow {
       now,
       now,
     );
+    notifyProjectStateChanged(input.project_id, "milestones");
   return getMilestone(id)!;
 }
 
@@ -2263,6 +2292,9 @@ export function updateMilestone(
 ): MilestoneRow | undefined {
   const setClauses: string[] = [];
   const values: unknown[] = [];
+  const milestone = getMilestone(id);
+  if (!milestone) return;
+
   for (const key of MILESTONE_PATCH_KEYS) {
     if (key in patch) {
       setClauses.push(`${key} = ?`);
@@ -2276,6 +2308,7 @@ export function updateMilestone(
   getDb()
     .prepare(`UPDATE milestones SET ${setClauses.join(", ")} WHERE id = ?`)
     .run(...values);
+    notifyProjectStateChanged(milestone.project_id, "milestones");
   return getMilestone(id);
 }
 
@@ -2286,12 +2319,19 @@ export function updateMilestone(
  */
 export function deleteMilestone(id: string): boolean {
   const db = getDb();
+  const milestone = getMilestone(id);
+  if (!milestone) return false;
+
   const tx = db.transaction(() => {
     db.prepare(`UPDATE tasks SET milestone_id = NULL WHERE milestone_id = ?`).run(id);
     const info = db.prepare(`DELETE FROM milestones WHERE id = ?`).run(id);
     return info.changes > 0;
   });
-  return tx();
+  const deleted = tx();
+  if (deleted) {
+      notifyProjectStateChanged(milestone.project_id, "milestones");
+  }
+  return deleted;
 }
 
 /**
@@ -2895,6 +2935,7 @@ export type UpdateProjectPatch = Partial<{
   brief_markdown: string | null;
   repo_url: string | null;
   archived: boolean | 0 | 1;
+  collaborative: boolean | 0 | 1;
 }>;
 
 const PROJECT_PATCH_KEYS = [
@@ -2910,6 +2951,7 @@ const PROJECT_PATCH_KEYS = [
   "brief_markdown",
   "repo_url",
   "archived",
+  "collaborative",
 ] as const;
 
 export function updateProject(
@@ -2921,7 +2963,7 @@ export function updateProject(
   for (const key of PROJECT_PATCH_KEYS) {
     if (key in patch) {
       let v: unknown = (patch as Record<string, unknown>)[key];
-      if (key === "is_internal" || key === "archived") {
+      if (key === "is_internal" || key === "archived" || key === "collaborative") {
         v = Number(Boolean(v)) as 0 | 1;
       } else if (key === "repo_url" && typeof v === "string") {
         v = parseRepoUrl(v)?.url ?? v;
@@ -2939,6 +2981,14 @@ export function updateProject(
   getDb()
     .prepare(`UPDATE projects SET ${setClauses.join(", ")} WHERE id = ?`)
     .run(...values);
+
+    const updated = getProject(id);
+    if(updated) {
+        if(patch.description || patch.brief_markdown) {
+            notifyProjectStateChanged(id, "project");
+        }
+    }
+
   return getProject(id);
 }
 
@@ -3167,4 +3217,68 @@ export function sweepSessionStatuses(now = Date.now()): void {
     `UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, last_event_at)
        WHERE status != 'ended' AND ? - last_event_at >= ?`,
   ).run(now, IDLE_MS);
+}
+
+async function notifyProjectStateChanged(
+    projectId: string,
+    kind: "project" | "milestones" | "task" | "task-delete",
+    taskId?: string
+) {
+    const project = getProject(projectId);
+    if (!project?.collaborative || !project.path) return;
+
+    // Fire and forget
+    void Promise.resolve().then(async () => {
+        try {
+            switch (kind) {
+                case "project": {
+                    await writeProjectFile(project.path, {
+                        description: project.description,
+                        brief_markdown: project.brief_markdown,
+                    });
+                    break;
+                }
+                case "milestones": {
+                    const milestones = listMilestones({ project_id: projectId });
+                    const gaiaMilestones = milestones.map(m => {
+                        const { project_id, ...rest } = m;
+                        return { ...rest, name: m.name };
+                    });
+                    await writeMilestonesFile(project.path, gaiaMilestones);
+                    break;
+                }
+                case "task": {
+                    if (!taskId) return;
+                    const task = getTask(taskId);
+                    if (task) {
+                        const gaiaTask = {
+                            id: task.id,
+                            title: task.title,
+                            status: task.status,
+                            priority: task.priority,
+                            due_date: task.due_date,
+                            milestone_id: task.milestone_id,
+                            description: task.description,
+                            recurrence: task.recurrence,
+                            employee_id: task.employee_id,
+                            skill: task.skill,
+                            playbook: task.playbook,
+                            created_at: task.created_at,
+                            recurrence_anchor: task.recurrence_anchor,
+                            parent_task_id: task.parent_task_id,
+                        };
+                        await writeTaskFile(project.path, gaiaTask);
+                    }
+                    break;
+                }
+                case "task-delete": {
+                    if (!taskId) return;
+                    await deleteTaskFile(project.path, taskId);
+                    break;
+                }
+            }
+        } catch (e) {
+            console.error(`Failed to mirror change for project ${projectId} (${kind})`, e);
+        }
+    });
 }
