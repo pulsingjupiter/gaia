@@ -2577,6 +2577,37 @@ export function setDefaultLlmCli(value: PlannerCli): void {
 }
 
 // ---------------------------------------------------------------------------
+// Telegram
+// ---------------------------------------------------------------------------
+
+export interface TelegramConfig {
+  token: string; // empty string when unset
+  allowed_chat_ids: string; // comma-separated, empty when unset
+}
+
+const TELEGRAM_BOT_TOKEN_KEY = "telegram_bot_token";
+const TELEGRAM_ALLOWED_CHAT_IDS_KEY = "telegram_allowed_chat_ids";
+
+export function getTelegramConfig(): TelegramConfig {
+  const token = getSetting<string>(TELEGRAM_BOT_TOKEN_KEY);
+  const allowed_chat_ids = getSetting<string>(TELEGRAM_ALLOWED_CHAT_IDS_KEY);
+  return {
+    token: typeof token === "string" ? token : "",
+    allowed_chat_ids:
+      typeof allowed_chat_ids === "string" ? allowed_chat_ids : "",
+  };
+}
+
+export function setTelegramConfig(patch: Partial<TelegramConfig>): void {
+  if (typeof patch.token === "string") {
+    setSetting(TELEGRAM_BOT_TOKEN_KEY, patch.token);
+  }
+  if (typeof patch.allowed_chat_ids === "string") {
+    setSetting(TELEGRAM_ALLOWED_CHAT_IDS_KEY, patch.allowed_chat_ids);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Run stats (aggregates for dashboard / activity)
 // ---------------------------------------------------------------------------
 

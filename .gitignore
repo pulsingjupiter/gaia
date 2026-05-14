@@ -39,6 +39,7 @@ app/data/*.db-*
 
 # Per-agent inboxes are user-local state
 agents/*/inbox.json
+agents/gaia/.telegram-sessions.json
 
 # Shared agent files area is user-local
 agents/_shared/files/*

@@ -289,3 +289,58 @@ Do not modify INSTALL.md or any other file in the bundle.
 ## 12. Credits
 
 Built with Claude Code.
+
+---
+
+## 13. Telegram bot (optional)
+
+Gaia can run a small helper script that bridges a Telegram chat to your
+master Gaia agent, letting you interact with your projects and tasks
+from your phone. The bot runs on your Mac and long-polls Telegram for
+updates, so your machine must be on and connected to the internet.
+
+### 1. Register a bot with @BotFather
+- Open Telegram and start a chat with `@BotFather`.
+- Send `/newbot`.
+- Follow the prompts to choose a name and username for your bot.
+- BotFather will reply with a token. Copy this token.
+
+### 2. Find your chat ID
+- After creating your bot, send it a message from your own Telegram account.
+- Open your web browser and visit the following URL, replacing `<TOKEN>`
+  with the token you just copied:
+  `https://api.telegram.org/bot<TOKEN>/getUpdates`
+- Look for the JSON response. You should see a "result" array with an
+  update from you. Inside that, find `message.chat.id`. This is your
+  numeric chat ID. Copy it.
+
+### 3. Set environment variables
+- In the project root, create a file named `.env.local` if it doesn't
+  exist.
+- Add the following lines, pasting your token and chat ID:
+  ```
+  TELEGRAM_BOT_TOKEN=YOUR_TOKEN_HERE
+  TELEGRAM_ALLOWED_CHAT_IDS=YOUR_CHAT_ID_HERE
+  ```
+- If you want to allow multiple users, separate their chat IDs with a
+  comma.
+
+### 4. Run the bot
+The bot runs as a separate process from the main web server.
+
+- First, ensure the main Gaia dashboard is running. In one terminal:
+  ```bash
+  cd app && npm run dev
+  ```
+- In a **second terminal**, start the bot:
+  ```bash
+  cd app && npm run bot
+  ```
+- You should see a "Bot listening..." message.
+
+**Important:**
+- The bot needs `npm run dev` to be running because it communicates with
+  the local API server to get data and create tasks.
+- Your Mac must stay awake for the bot to receive and respond to
+  messages. Consider disabling sleep (`caffeinate -d`) or running it on a
+  desktop machine that's always on.

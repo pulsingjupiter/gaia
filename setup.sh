@@ -118,6 +118,12 @@ else
   ok "macmon serving on http://127.0.0.1:9090"
 fi
 
+# Telegram bot — optional, powers the remote master-agent bridge. Non-blocking.
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    info "Optional: set TELEGRAM_BOT_TOKEN in .env.local for bot access (see INSTALL.md)"
+fi
+
+
 # --- 3. install app deps -----------------------------------------------------
 
 section "2/6  Installing app dependencies"
