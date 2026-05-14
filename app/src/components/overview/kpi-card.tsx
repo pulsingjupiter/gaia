@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 
 export function KPICard({
   label,
@@ -8,6 +9,7 @@ export function KPICard({
   icon: Icon,
   iconBg,
   iconFg,
+  href,
 }: {
   label: string;
   value: string;
@@ -16,9 +18,10 @@ export function KPICard({
   icon: LucideIcon;
   iconBg: string;
   iconFg: string;
+  href?: string;
 }) {
-  return (
-    <div className="card-surface flex items-start gap-4 p-4">
+  const content = (
+    <>
       <div
         className="flex size-10 items-center justify-center rounded-xl"
         style={{ background: iconBg }}
@@ -39,6 +42,23 @@ export function KPICard({
           <div className="mt-1 text-[11px] text-muted">{footer}</div>
         ) : null}
       </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="card-surface flex items-start gap-4 p-4 transition-colors hover:border-strong cursor-pointer"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="card-surface flex items-start gap-4 p-4">
+      {content}
     </div>
   );
 }

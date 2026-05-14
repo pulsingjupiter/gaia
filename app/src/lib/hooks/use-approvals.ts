@@ -89,10 +89,13 @@ export function useApprovals(filters?: Filters) {
         status === "pending" ? prev.filter((a) => a.id !== id) : prev,
       );
       try {
-        const res = await fetch(`/api/approvals/${encodeURIComponent(id)}/${action}`, {
-          method: "POST",
+        const res = await fetch(`/api/approvals/${encodeURIComponent(id)}`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ notes: notes ?? null }),
+          body: JSON.stringify({
+            status: action === "approve" ? "approved" : "rejected",
+            notes: notes ?? null,
+          }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as ResolveResponse;
