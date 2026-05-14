@@ -22,7 +22,7 @@ import { DueSummaryWidget } from "@/components/overview/due-summary-widget";
 import { LiveRunDrawer } from "@/components/shared/live-run-drawer";
 import { EmployeeModal } from "@/components/employees/employee-modal";
 import { useEmployees } from "@/components/employees/employees-context";
-import { OVERVIEW_TASKS, type OverviewTask } from "@/lib/mock/tasks";
+import { useOverviewTasks } from "@/lib/hooks/use-overview-tasks";
 import { useTaskDueSummary } from "@/lib/hooks/use-task-due-summary";
 import { useUnreadCount } from "@/lib/hooks/use-unread-count";
 
@@ -154,8 +154,10 @@ export default function OverviewPage() {
   // agents by default) land here on first paint.
   const showEmptyPrompt = visibleAgents.length === 0;
 
+  const { tasks: overviewTasks, loading: tasksLoading } = useOverviewTasks();
+
   const runTask = useCallback(
-    async (task: OverviewTask) => {
+    async (task: any) => {
       setRunError(null);
       const empId = pickEmployeeForTask(
         task.id,
@@ -268,6 +270,7 @@ export default function OverviewPage() {
               icon={Users}
               iconBg="#EEEAFD"
               iconFg="#5B5BD6"
+              href="/agents"
             />
             <KPICard
               label="Tasks Running"
@@ -281,6 +284,7 @@ export default function OverviewPage() {
               icon={ClipboardList}
               iconBg="#D1FAE5"
               iconFg="#059669"
+              href="/tasks?status=in_progress"
             />
             <KPICard
               label="Completed Today"
@@ -295,6 +299,7 @@ export default function OverviewPage() {
               icon={CheckCircle2}
               iconBg="#FCE7F3"
               iconFg="#DB2777"
+              href="/activity"
             />
             <KPICard
               label="Pending Approvals"
@@ -307,6 +312,7 @@ export default function OverviewPage() {
               icon={Clock}
               iconBg="#FFE4D6"
               iconFg="#C2410C"
+              href="/approvals"
             />
           </div>
         );
@@ -331,9 +337,26 @@ export default function OverviewPage() {
             </Link>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {OVERVIEW_TASKS.map((t) => (
-              <TaskCard key={t.id} task={t} onRun={runTask} />
-            ))}
+            {tasksLoading ? (
+              [...Array(4)].map((_, i) => (
+                <div
+                  key={i}
+                  className="h-[140px] animate-pulse rounded-xl bg-surface-muted"
+                />
+              ))
+            ) : overviewTasks.length === 0 ? (
+              <div className="col-span-full py-8 text-center text-xs text-muted">
+                No active tasks —{" "}
+                <Link href="/tasks" className="text-accent hover:underline">
+                  + Add Task
+                </Link>{" "}
+                or run Gaia AI Assess on a project.
+              </div>
+            ) : (
+              overviewTasks.map((t) => (
+                <TaskCard key={t.id} task={t} onRun={runTask} />
+              ))
+            )}
           </div>
         </section>
         <section className="lg:col-span-4">
