@@ -41,10 +41,10 @@ export interface TaskTimelineProps {
   dueFilter?: "overdue" | "today" | "this_week" | "none" | null;
   refreshKey?: number;
   onCountsChange?: (counts: {
-    total: number;
-    in_progress: number;
+    planned: number;
+    inProgress: number;
     review: number;
-    done: number;
+    completed: number;
   }) => void;
 }
 
@@ -115,10 +115,10 @@ export function TaskTimeline({
   useEffect(() => {
     if (!onCountsChange) return;
     onCountsChange({
-      total: tasks.length,
-      in_progress: tasks.filter((t) => t.status === "in_progress").length,
+      planned: tasks.length,
+      inProgress: tasks.filter((t) => t.status === "in_progress").length,
       review: tasks.filter((t) => t.status === "review").length,
-      done: tasks.filter((t) => t.status === "done").length,
+      completed: tasks.filter((t) => t.status === "done").length,
     });
   }, [tasks, onCountsChange]);
 

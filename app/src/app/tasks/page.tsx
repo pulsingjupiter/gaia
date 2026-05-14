@@ -246,14 +246,7 @@ export default function TasksPage() {
             milestoneFilter={milestoneParam}
             dueFilter={dueParam}
             refreshKey={refreshKey}
-            onCountsChange={(timelineCounts) =>
-              setCounts({
-                planned: timelineCounts.total,
-                inProgress: timelineCounts.in_progress,
-                review: timelineCounts.review,
-                completed: timelineCounts.done,
-              })
-            }
+            onCountsChange={setCounts}
           />
         ) : (
           <TaskCalendar
