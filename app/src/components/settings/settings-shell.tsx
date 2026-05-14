@@ -9,6 +9,7 @@ export type SettingsSectionId =
   | "profile"
   | "agents"
   | "planner"
+  | "telegram"
   | "projects"
   | "terminal"
   | "hooks"

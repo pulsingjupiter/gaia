@@ -16,6 +16,7 @@ import {
   Info,
   Loader2,
   Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import { PageHeader } from "@/components/shell/page-header";
 import {
@@ -26,6 +27,7 @@ import {
 import { ProfileSection } from "@/components/settings/profile-section";
 import { AgentsSection } from "@/components/settings/agents-section";
 import { PlannerCliSection } from "@/components/settings/planner-cli-section";
+import { TelegramSection } from "@/components/settings/telegram-section";
 import { ProjectsSection } from "@/components/settings/projects-section";
 import { TerminalSection } from "@/components/settings/terminal-section";
 import { HooksSection } from "@/components/settings/hooks-section";
@@ -39,6 +41,7 @@ const SECTIONS: SettingsSectionDef[] = [
   { id: "profile", label: "Profile", description: "How you appear in Gaia.", icon: User },
   { id: "agents", label: "Agents", description: "Per-agent model & cost cap.", icon: Users },
   { id: "planner", label: "Planner", description: "Default LLM CLI for Plan/Assess.", icon: Sparkles },
+  { id: "telegram", label: "Telegram", description: "Configure the Telegram bot.", icon: MessageSquare },
   { id: "projects", label: "Projects", description: "Read-only summary.", icon: FolderKanban },
   { id: "terminal", label: "Terminal", description: "Resume preference.", icon: TerminalSquare },
   { id: "hooks", label: "Hooks", description: "Optional hooks installer.", icon: Webhook },
@@ -103,6 +106,7 @@ export default function SettingsPage() {
             />
           )}
           {active === "planner" && <PlannerCliSection />}
+          {active === "telegram" && <TelegramSection />}
           {active === "projects" && <ProjectsSection projects={projects} />}
           {active === "terminal" && (
             <TerminalSection
